@@ -8,7 +8,7 @@ function Register() {
     email: "",
     password: "",
     confirmPassword: "",
-    role: "jobseeker",
+    user_type: "user",
     company_name: "",
     industry: "",
   });
@@ -32,7 +32,20 @@ function Register() {
 
     setLoading(true);
     try {
-      await api.post("/auth/register", formData);
+      const dataToSend = {
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+        user_type: formData.user_type,
+      };
+
+      if (formData.user_type === "organisation") {
+        dataToSend.company_name = formData.company_name;
+        dataToSend.industry = formData.industry;
+      }
+      
+      console.log("Sending this data:", dataToSend);
+      await api.post("/auth/register", dataToSend);
       navigate("/login");
     } catch (err) {
       setError(
@@ -66,8 +79,8 @@ function Register() {
               I am a
             </label>
             <select
-              name="role"
-              value={formData.role}
+              name="user_type"
+              value={formData.user_type}
               onChange={handleChange}
               className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
@@ -93,7 +106,7 @@ function Register() {
           </div>
 
           {/* Organisation fields - only show if role is organisation */}
-          {formData.role === "organisation" && (
+          {formData.user_type === "organisation" && (
             <>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">

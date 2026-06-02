@@ -7,7 +7,7 @@ function Login() {
   const [formData, setFormData] = useState({
     email: "",
     password: "",
-    role: "jobseeker",
+    user_type: "user",
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -28,7 +28,7 @@ function Login() {
       const res = await api.post("/auth/login", formData);
       login(res.data.user, res.data.token);
 
-      if (formData.role === "jobseeker") {
+      if (res.data.user.user_type === "user") {
         navigate("/dashboard/jobseeker");
       } else {
         navigate("/dashboard/organisation");
@@ -64,8 +64,8 @@ function Login() {
               I am a
             </label>
             <select
-              name="role"
-              value={formData.role}
+              name="user_type"
+              value={formData.user_type}
               onChange={handleChange}
               className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             >

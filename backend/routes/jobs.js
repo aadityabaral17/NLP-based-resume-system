@@ -139,7 +139,7 @@ router.get('/', async (req, res) => {
       company_name: job.company_name,
       title: job.title,
       description: job.description,
-      required_skills: JSON.parse(job.required_skills),
+      required_skills: job.required_skills || [],
       experience_level: job.experience_level,
       employment_type: job.employment_type,
       deadline: job.deadline,

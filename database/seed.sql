@@ -7,14 +7,14 @@ TRUNCATE TABLE notifications, recommendations, match_results, cvs, job_vacancies
 
 --- TEST USERS (job seekers) ---
 INSERT INTO users (name, email, password, email_verified) VALUES
-('Ram Sharma', 'ram@test.com', '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', true),
-('Sita Thapa', 'sita@test.com', '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', true),
-('Hari Adhikari', 'hari@test.com', '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', true);
+('Ram Sharma', 'ram@test.com', '$2a$10$3.RTha2XlkKZC6OP1.ClDuylrBxwq9wwWpL9.8l27f4M80TQljn2K', true),
+('Sita Thapa', 'sita@test.com', '$2a$10$3.RTha2XlkKZC6OP1.ClDuylrBxwq9wwWpL9.8l27f4M80TQljn2K', true),
+('Hari Adhikari', 'hari@test.com', '$2a$10$3.RTha2XlkKZC6OP1.ClDuylrBxwq9wwWpL9.8l27f4M80TQljn2K', true);
 
 --- TEST ORGANISATIONS ---
 INSERT INTO organisations (company_name, email, password, industry, email_verified) VALUES
-('Tech Nepal Pvt Ltd', 'technepал@test.com', '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Information Technology', true),
-('Himalayan Software', 'himalayan@test.com', '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Software Development', true);
+('Tech Nepal Pvt Ltd', 'technepal@test.com', '$2a$10$3.RTha2XlkKZC6OP1.ClDuylrBxwq9wwWpL9.8l27f4M80TQljn2K', 'Information Technology', true),
+('Himalayan Software', 'himalayan@test.com', '$2a$10$3.RTha2XlkKZC6OP1.ClDuylrBxwq9wwWpL9.8l27f4M80TQljn2K', 'Software Development', true);
 
 --- TEST JOB VACANCIES ---
 INSERT INTO job_vacancies (org_id, title, description, required_skills, experience_level, employment_type, deadline)
@@ -37,7 +37,7 @@ SELECT
   'Mid Level',
   'Full Time',
   '2026-07-15'
-FROM organisations WHERE email = 'technepал@test.com';
+FROM organisations WHERE email = 'technepal@test.com';
 
 INSERT INTO job_vacancies (org_id, title, description, required_skills, experience_level, employment_type, deadline)
 SELECT

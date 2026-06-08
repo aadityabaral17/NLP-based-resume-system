@@ -74,7 +74,7 @@ def extract_entities(text: str) -> dict:
 def health_check():
     return {"status": "ok"}
 
-@app.post("/parse")
+@app.post("/api/parse/cv")
 async def parse_resume(file: UploadFile = File(...)):
     contents = await file.read()
     if not (file.filename.endswith(".pdf") or file.filename.endswith(".docx")):
@@ -92,11 +92,19 @@ async def parse_resume(file: UploadFile = File(...)):
         "word_count": len(raw_text.split())
     }
 
-@app.post("/match")
-def match_resume(request: MatchRequest):
-    result = compute_match(
-        cv_text=request.cv_text,
-        jd_text=request.jd_text,
-        user_id=request.user_id
-    )
-    return result
+@app.post("/parse/job")
+async def parse_job(data: dict):
+    description = data.get("description", "")
+    title = data.get("title", "")
+    
+    # Clean text
+    cleaned = clean_text(description + " " + title)
+    
+    # Extract required skills
+    skills = extract_skills(description + " " + title)
+    
+    return {
+        "required_skills": skills,
+        "experience_level": "Entry Level",
+        "cleaned_text": cleaned
+    }

@@ -3,6 +3,7 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import JobSeekerDashboard from "./pages/JobSeekerDashboard";
 import OrganisationDashboard from "./pages/OrganisationDashboard";
+import CVUpload from "./pages/CVupload";
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
         path="/dashboard/organisation"
         element={<OrganisationDashboard />}
       />
+      <Route path="/cv/upload" element={<CVUpload />} />
     </Routes>
   );
 }

@@ -77,7 +77,7 @@ def extract_entities(text: str) -> dict:
 def health_check():
     return {"status": "ok"}
 
-@app.post("/parse")
+@app.post("/api/parse/cv")
 async def parse_resume(file: UploadFile = File(...)):
 
     # Step 1: Read file
@@ -106,4 +106,21 @@ async def parse_resume(file: UploadFile = File(...)):
         "skills": skills,
         "entities": entities,
         "word_count": len(raw_text.split())
+    }
+
+@app.post("/parse/job")
+async def parse_job(data: dict):
+    description = data.get("description", "")
+    title = data.get("title", "")
+    
+    # Clean text
+    cleaned = clean_text(description + " " + title)
+    
+    # Extract required skills
+    skills = extract_skills(description + " " + title)
+    
+    return {
+        "required_skills": skills,
+        "experience_level": "Entry Level",
+        "cleaned_text": cleaned
     }

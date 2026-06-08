@@ -67,7 +67,7 @@ router.post('/', auth, async (req, res) => {
 
     for (const cv of cvs) {
       try {
-        const matchResponse = await axios.post(`${pythonServiceUrl}/api/match`, {
+        const matchResponse = await axios.post(`${pythonServiceUrl}/api/parse/job`, {
           cv_text: cv.extracted_text,
           skills: JSON.parse(cv.skill_entities),
           job_description: description,

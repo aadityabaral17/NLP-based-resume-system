@@ -1,6 +1,6 @@
 import pickle
-import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
+from recommendations import get_skill_recommendations
 
 # ── Load trained model and vectorizer ────────────────
 with open("model.pkl", "rb") as f:
@@ -34,6 +34,10 @@ def compute_match(cv_text: str, jd_text: str, user_id: int = None) -> dict:
     missing_skills = list(jd_skills - cv_skills)
     matching_skills = list(cv_skills & jd_skills)
     eligible = score >= 70.0
+
+    # Get frequency-weighted recommendations
+    recommendations = get_skill_recommendations(missing_skills)
+
     return {
         "user_id": user_id,
         "score": score,
@@ -41,6 +45,7 @@ def compute_match(cv_text: str, jd_text: str, user_id: int = None) -> dict:
         "predicted_category": predicted_category,
         "matching_skills": matching_skills,
         "missing_skills": missing_skills,
+        "skill_gap_recommendations": recommendations,
         "cv_skills": list(cv_skills),
         "jd_skills": list(jd_skills)
     }

@@ -1,22 +1,29 @@
 from fastapi import FastAPI, UploadFile, File
+from pydantic import BaseModel
 import pdfplumber
 import docx
 import spacy
 import io
+from match import compute_match
 
 app = FastAPI()
 nlp = spacy.load("en_core_web_sm")
 
-# Common skills keyword list
 SKILLS_LIST = [
     "python", "java", "javascript", "react", "node", "sql", "postgresql",
     "mongodb", "fastapi", "django", "flask", "machine learning", "deep learning",
     "nlp", "data analysis", "tensorflow", "pytorch", "scikit-learn", "pandas",
-    "numpy", "git", "docker", "aws", "linux", "html", "css", "typescript"
+    "numpy", "git", "docker", "aws", "linux", "html", "css", "typescript",
+    "excel", "powerpoint", "communication", "leadership", "teamwork",
+    "project management", "agile", "scrum", "rest api", "graphql"
 ]
 
+class MatchRequest(BaseModel):
+    user_id: int
+    cv_text: str
+    jd_text: str
+
 def extract_text_from_file(contents: bytes, filename: str) -> str:
-    """Extract raw text from PDF or DOCX"""
     text = ""
     if filename.endswith(".pdf"):
         with pdfplumber.open(io.BytesIO(contents)) as pdf:
@@ -29,36 +36,26 @@ def extract_text_from_file(contents: bytes, filename: str) -> str:
     return text
 
 def clean_text(text: str) -> str:
-    """Stop-word removal + lemmatisation using spaCy"""
     doc = nlp(text.lower())
     tokens = [
-        token.lemma_          # lemmatisation — 'running' becomes 'run'
+        token.lemma_
         for token in doc
-        if not token.is_stop   # remove stop words — 'the', 'is', 'at'
-        and not token.is_punct # remove punctuation
-        and not token.is_space # remove extra spaces
+        if not token.is_stop
+        and not token.is_punct
+        and not token.is_space
         and len(token.text) > 1
     ]
     return " ".join(tokens)
 
 def extract_skills(text: str) -> list:
-    """Match skills from text against known skills list"""
     text_lower = text.lower()
-    found_skills = []
-    for skill in SKILLS_LIST:
-        if skill in text_lower:
-            found_skills.append(skill)
-    return found_skills
+    return [skill for skill in SKILLS_LIST if skill in text_lower]
 
 def extract_entities(text: str) -> dict:
-    """Run spaCy NER to extract named entities"""
     doc = nlp(text)
     entities = {
-        "names": [],
-        "organizations": [],
-        "locations": [],
-        "dates": [],
-        "other": []
+        "names": [], "organizations": [],
+        "locations": [], "dates": [], "other": []
     }
     for ent in doc.ents:
         if ent.label_ == "PERSON":
@@ -79,30 +76,17 @@ def health_check():
 
 @app.post("/api/parse/cv")
 async def parse_resume(file: UploadFile = File(...)):
-
-    # Step 1: Read file
     contents = await file.read()
-
-    # Step 2: Extract raw text
     if not (file.filename.endswith(".pdf") or file.filename.endswith(".docx")):
         return {"error": "Only PDF or DOCX files supported"}
-
     raw_text = extract_text_from_file(contents, file.filename)
-
-    # Step 3: Clean text (stop-word removal + lemmatisation)
     cleaned_text = clean_text(raw_text)
-
-    # Step 4: Extract skills
     skills = extract_skills(raw_text)
-
-    # Step 5: Extract named entities
     entities = extract_entities(raw_text)
-
-    # Step 6: Return structured JSON
     return {
         "filename": file.filename,
-        "raw_text": raw_text[:500],        # first 500 chars preview
-        "cleaned_text": cleaned_text[:500], # after stop-word removal
+        "raw_text": raw_text[:500],
+        "cleaned_text": cleaned_text[:500],
         "skills": skills,
         "entities": entities,
         "word_count": len(raw_text.split())

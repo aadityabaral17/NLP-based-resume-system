@@ -4,7 +4,6 @@ import pdfplumber
 import docx
 import spacy
 import io
-from match import compute_match
 
 app = FastAPI()
 nlp = spacy.load("en_core_web_sm")
@@ -92,7 +91,7 @@ async def parse_resume(file: UploadFile = File(...)):
         "word_count": len(raw_text.split())
     }
 
-@app.post("/parse/job")
+@app.post("/api/parse/job")
 async def parse_job(data: dict):
     description = data.get("description", "")
     title = data.get("title", "")
@@ -107,4 +106,45 @@ async def parse_job(data: dict):
         "required_skills": skills,
         "experience_level": "Entry Level",
         "cleaned_text": cleaned
+    }
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+@app.post("/api/match")
+async def match_cv_job(data: dict):
+    cv_text = data.get("cv_text", "")
+    job_description = data.get("job_description", "")
+    cv_skills = data.get("skills", [])
+    required_skills = data.get("required_skills", [])
+
+    # TF-IDF cosine similarity
+    if cv_text and job_description:
+        vectorizer = TfidfVectorizer()
+        tfidf_matrix = vectorizer.fit_transform([cv_text, job_description])
+        cosine_sim = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])[0][0]
+    else:
+        cosine_sim = 0.0
+
+    # Skill overlap
+    cv_skills_lower = [s.lower() for s in cv_skills]
+    required_skills_lower = [s.lower() for s in required_skills]
+
+    if required_skills_lower:
+        matched = [s for s in required_skills_lower if s in cv_skills_lower]
+        skill_overlap = len(matched) / len(required_skills_lower)
+        missing_skills = [s for s in required_skills_lower if s not in cv_skills_lower]
+    else:
+        skill_overlap = 0.0
+        missing_skills = []
+
+    # Composite score
+    composite_score = (cosine_sim * 0.65) + (skill_overlap * 0.35)
+    is_eligible = composite_score >= 0.70
+
+    return {
+        "cosine_similarity": float(cosine_sim),
+        "skill_overlap": float(skill_overlap),
+        "final_score": float(composite_score),
+        "missing_skills": missing_skills,
+        "is_eligible": bool(is_eligible)
     }

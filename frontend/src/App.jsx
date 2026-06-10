@@ -5,20 +5,51 @@ import JobSeekerDashboard from "./pages/JobSeekerDashboard";
 import OrganisationDashboard from "./pages/OrganisationDashboard";
 import CVUpload from "./pages/CVUpload";
 import PostJob from "./pages/PostJob";
+import ProtectedRoute from "./components/ProtectedRoute";
 
 function App() {
   return (
     <Routes>
+      {/* Public routes */}
       <Route path="/" element={<Login />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
-      <Route path="/dashboard/jobseeker" element={<JobSeekerDashboard />} />
+
+      {/* Job seeker only routes */}
+      <Route
+        path="/dashboard/jobseeker"
+        element={
+          <ProtectedRoute allowedRole="user">
+            <JobSeekerDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/cv/upload"
+        element={
+          <ProtectedRoute allowedRole="user">
+            <CVUpload />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Organisation only routes */}
       <Route
         path="/dashboard/organisation"
-        element={<OrganisationDashboard />}
+        element={
+          <ProtectedRoute allowedRole="organisation">
+            <OrganisationDashboard />
+          </ProtectedRoute>
+        }
       />
-      <Route path="/cv/upload" element={<CVUpload />} />
-      <Route path="/jobs/post" element={<PostJob />} />
+      <Route
+        path="/jobs/post"
+        element={
+          <ProtectedRoute allowedRole="organisation">
+            <PostJob />
+          </ProtectedRoute>
+        }
+      />
     </Routes>
   );
 }

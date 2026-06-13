@@ -91,6 +91,12 @@ router.post("/upload", auth, upload.single("cv_file"), async (req, res) => {
     const query = `
       INSERT INTO cvs (user_id, file_path, extracted_text, skill_entities, uploaded_at)
       VALUES ($1, $2, $3, $4, NOW())
+      ON CONFLICT (user_id) 
+      DO UPDATE SET 
+        file_path = EXCLUDED.file_path,
+        extracted_text = EXCLUDED.extracted_text,
+        skill_entities = EXCLUDED.skill_entities,
+        uploaded_at = NOW()
       RETURNING cv_id, user_id, file_path, extracted_text, uploaded_at
     `;
 

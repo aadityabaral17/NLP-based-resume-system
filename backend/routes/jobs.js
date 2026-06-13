@@ -3,13 +3,13 @@ const router = express.Router();
 const auth = require("../middleware/auth");
 const pool = require("../config/database");
 const axios = require("axios");
+const { sendMatchNotification } = require("../utils/emailService");
 
 // POST /api/jobs
 router.post("/", auth, async (req, res) => {
   try {
     const { id: org_id, user_type } = req.user;
 
-    // Only organisations can post jobs
     if (user_type !== "organisation") {
       return res.status(403).json({
         error: {
@@ -22,7 +22,6 @@ router.post("/", auth, async (req, res) => {
     const { title, description, experience_level, employment_type, deadline } =
       req.body;
 
-    // Validation
     if (!title || !description) {
       return res.status(400).json({
         error: {
@@ -32,7 +31,6 @@ router.post("/", auth, async (req, res) => {
       });
     }
 
-    // Call Python microservice to parse job description
     const pythonServiceUrl =
       process.env.PYTHON_SERVICE_URL || "http://localhost:8000";
     const response = await axios.post(`${pythonServiceUrl}/api/parse/job`, {
@@ -43,7 +41,6 @@ router.post("/", auth, async (req, res) => {
 
     const parsedData = response.data;
 
-    // Save job vacancy to database
     const query = `
       INSERT INTO job_vacancies (org_id, title, description, required_skills, experience_level, employment_type, deadline)
       VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -62,11 +59,10 @@ router.post("/", auth, async (req, res) => {
 
     const job = result.rows[0];
 
-    // Trigger matching with existing CVs
     const cvsQuery = "SELECT * FROM cvs";
     const cvsResult = await pool.query(cvsQuery);
     const cvs = cvsResult.rows;
-    console.log('CVs found:', cvs.length)
+    console.log("CVs found:", cvs.length);
 
     for (const cv of cvs) {
       try {
@@ -83,14 +79,13 @@ router.post("/", auth, async (req, res) => {
         const matchResult = matchResponse.data;
         console.log("Match result:", matchResult);
 
-        // Save match result to database
         const matchQuery = `
           INSERT INTO match_results (user_id, vacancy_id, cosine_score, composite_score, missing_skills, is_eligible, created_at)
           VALUES ($1, $2, $3, $4, $5, $6, NOW())
           RETURNING match_id
         `;
 
-        await pool.query(matchQuery, [
+        const savedMatch = await pool.query(matchQuery, [
           cv.user_id,
           job.vacancy_id,
           matchResult.cosine_similarity,
@@ -98,9 +93,38 @@ router.post("/", auth, async (req, res) => {
           matchResult.missing_skills,
           matchResult.is_eligible,
         ]);
+
+        // Send email if score >= 70%
+        if (matchResult.is_eligible) {
+          try {
+            const userResult = await pool.query(
+              "SELECT name, email FROM users WHERE user_id = $1",
+              [cv.user_id],
+            );
+            const user = userResult.rows[0];
+            if (user) {
+              await sendMatchNotification(
+                user.email,
+                user.name,
+                job.title,
+                req.user.name,
+                matchResult.final_score,
+                matchResult.missing_skills,
+              );
+              console.log(`Email sent to ${user.email} for ${job.title}`);
+
+              await pool.query(
+                `INSERT INTO notifications (match_id, recipient_email, status, sent_at)
+                 VALUES ($1, $2, 'sent', NOW())`,
+                [savedMatch.rows[0].match_id, user.email],
+              );
+            }
+          } catch (emailError) {
+            console.error("Email error:", emailError);
+          }
+        }
       } catch (matchError) {
         console.error("Error matching CV:", matchError);
-        // Continue with next CV even if matching fails
       }
     }
 

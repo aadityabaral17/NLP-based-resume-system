@@ -9,6 +9,7 @@ function JobSeekerDashboard() {
   const [jobs, setJobs] = useState([]);
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [recommendations, setRecommendations] = useState(null);
 
   useEffect(() => {
     fetchData();
@@ -21,6 +22,10 @@ function JobSeekerDashboard() {
 
       const matchRes = await api.get("/match/user");
       setMatches(matchRes.data.matches || []);
+
+      // Test recommendations
+      const recRes = await api.get(`/recommendations/${user?.id}`);
+      setRecommendations(recRes.data.recommendations);
     } catch (err) {
       console.error("Error fetching data:", err);
     } finally {
@@ -188,6 +193,61 @@ function JobSeekerDashboard() {
             </div>
           )}
         </div>
+        {/* Recommendations Panel */}
+        {recommendations && (
+          <div className="mt-8">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">
+              Career Recommendations
+            </h3>
+
+            {/* Top matches */}
+            {recommendations.top_matches?.length > 0 && (
+              <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
+                <h4 className="font-medium text-gray-700 mb-3">
+                  Your Top Job Matches
+                </h4>
+                <div className="space-y-2">
+                  {recommendations.top_matches.map((match, i) => (
+                    <div
+                      key={i}
+                      className="flex justify-between items-center py-2 border-b border-gray-100 last:border-0"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-gray-800">
+                          {match.job_title}
+                        </p>
+                        <p className="text-xs text-gray-500">{match.company}</p>
+                      </div>
+                      <span className="text-sm font-bold text-green-600">
+                        {Math.round(match.match_score * 100)}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Career tips */}
+            {recommendations.career_tips?.map((category, i) => (
+              <div key={i} className="bg-white rounded-xl p-5 shadow-sm mb-4">
+                <h4 className="font-medium text-gray-700 mb-3 flex items-center gap-2">
+                  {category.category === "Skill Development" && "📚"}
+                  {category.category === "Job Search Strategy" && "🎯"}
+                  {category.category === "Career Growth" && "🚀"}
+                  {category.category}
+                </h4>
+                <ul className="space-y-2">
+                  {category.tips.map((tip, j) => (
+                    <li key={j} className="text-sm text-gray-600 flex gap-2">
+                      <span className="text-blue-500 mt-0.5">→</span>
+                      {tip}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -41,6 +41,24 @@ function OrganisationDashboard() {
     }
   };
 
+  const handleExportCSV = async (vacancy_id) => {
+    try {
+      const res = await api.get(`/recommendations/export/${vacancy_id}`, {
+        responseType: "blob",
+      });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `candidates_${vacancy_id}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Export error:", err);
+    }
+  };
+
   const handleLogout = () => {
     logout();
     navigate("/login");
@@ -173,6 +191,14 @@ function OrganisationDashboard() {
                 ? "Ranked Candidates"
                 : "Select a job to view candidates"}
             </h3>
+            {selectedJob && candidates.length > 0 && (
+              <button
+                onClick={() => handleExportCSV(selectedJob)}
+                className="text-sm bg-green-600 hover:bg-green-700 text-white px-4 py-2 mb-4 rounded-lg transition"
+              >
+                Export CSV
+              </button>
+            )}
             {loadingCandidates ? (
               <div className="bg-white rounded-xl p-8 text-center shadow-sm">
                 <p className="text-gray-400">Loading candidates...</p>

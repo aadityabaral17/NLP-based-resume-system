@@ -94,7 +94,7 @@ router.post("/", auth, async (req, res) => {
           matchResult.is_eligible,
         ]);
 
-        // Send email if score >= 70%
+        // Send email if score >= 65%
         if (matchResult.is_eligible) {
           try {
             const userResult = await pool.query(
@@ -103,11 +103,17 @@ router.post("/", auth, async (req, res) => {
             );
             const user = userResult.rows[0];
             if (user) {
+              const orgResult = await pool.query(
+                "SELECT company_name FROM organisations WHERE org_id = $1",
+                [org_id],
+              );
+              const orgName =
+                orgResult.rows[0]?.company_name || "The Organisation";
               await sendMatchNotification(
                 user.email,
                 user.name,
                 job.title,
-                req.user.name,
+                orgName,
                 matchResult.final_score,
                 matchResult.missing_skills,
               );

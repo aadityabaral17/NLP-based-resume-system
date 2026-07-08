@@ -1,8 +1,8 @@
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
+require("dotenv").config();
+const express = require("express");
+const cors = require("cors");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 
 const app = express();
 
@@ -13,7 +13,7 @@ app.use(cors());
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+  max: 100, // limit each IP to 100 requests per windowMs
 });
 app.use(limiter);
 
@@ -22,30 +22,31 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Health check endpoint
-app.get('/health', (req, res) => {
+app.get("/health", (req, res) => {
   res.json({
-    status: 'healthy',
-    service: 'ResumeMatch AI Backend',
-    version: '1.0.0',
-    timestamp: new Date().toISOString()
+    status: "healthy",
+    service: "ResumeMatch AI Backend",
+    version: "1.0.0",
+    timestamp: new Date().toISOString(),
   });
 });
 
 // Routes
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/cv', require('./routes/cv'));
-app.use('/api/jobs', require('./routes/jobs'));
-app.use('/api/match', require('./routes/match'));
-app.use('/api/recommendations', require('./routes/recommendations'));
+app.use("/api/auth", require("./routes/auth"));
+app.use("/api/cv", require("./routes/cv"));
+app.use("/api/jobs", require("./routes/jobs"));
+app.use("/api/match", require("./routes/match"));
+app.use("/api/recommendations", require("./routes/recommendations"));
+app.use("/api/applications", require("./routes/applications"));
 
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(err.status || 500).json({
     error: {
-      message: err.message || 'Internal Server Error',
-      status: err.status || 500
-    }
+      message: err.message || "Internal Server Error",
+      status: err.status || 500,
+    },
   });
 });
 
@@ -53,9 +54,9 @@ app.use((err, req, res, next) => {
 app.use((req, res) => {
   res.status(404).json({
     error: {
-      message: 'Route not found',
-      status: 404
-    }
+      message: "Route not found",
+      status: 404,
+    },
   });
 });
 

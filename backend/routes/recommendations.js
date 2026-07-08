@@ -121,7 +121,7 @@ router.get("/export/:jobId", auth, async (req, res) => {
       SELECT mr.*, u.name, u.email 
       FROM match_results mr
       JOIN users u ON mr.user_id = u.user_id
-      WHERE mr.vacancy_id = $1 AND mr.is_eligible = true
+      WHERE mr.vacancy_id = $1
       ORDER BY mr.composite_score DESC
     `;
 

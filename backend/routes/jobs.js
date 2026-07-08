@@ -19,8 +19,14 @@ router.post("/", auth, async (req, res) => {
       });
     }
 
-    const { title, description, experience_level, employment_type, deadline } =
-      req.body;
+    const {
+      title,
+      description,
+      experience_level,
+      employment_type,
+      deadline,
+      category,
+    } = req.body;
 
     if (!title || !description) {
       return res.status(400).json({
@@ -42,9 +48,9 @@ router.post("/", auth, async (req, res) => {
     const parsedData = response.data;
 
     const query = `
-      INSERT INTO job_vacancies (org_id, title, description, required_skills, experience_level, employment_type, deadline)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      RETURNING vacancy_id, org_id, title, description, required_skills, experience_level, employment_type, deadline, created_at
+      INSERT INTO job_vacancies (org_id, title, description, required_skills, experience_level, employment_type, category, deadline)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING vacancy_id, org_id, title, description, required_skills, experience_level, employment_type, category, deadline, created_at
     `;
 
     const result = await pool.query(query, [
@@ -54,85 +60,11 @@ router.post("/", auth, async (req, res) => {
       parsedData.required_skills,
       experience_level || parsedData.experience_level,
       employment_type,
+      category,
       deadline,
     ]);
 
     const job = result.rows[0];
-
-    const cvsQuery = "SELECT * FROM cvs";
-    const cvsResult = await pool.query(cvsQuery);
-    const cvs = cvsResult.rows;
-    console.log("CVs found:", cvs.length);
-
-    for (const cv of cvs) {
-      try {
-        const matchResponse = await axios.post(
-          `${pythonServiceUrl}/api/match`,
-          {
-            cv_text: cv.extracted_text,
-            skills: cv.skill_entities,
-            job_description: description,
-            required_skills: parsedData.required_skills,
-          },
-        );
-
-        const matchResult = matchResponse.data;
-        console.log("Match result:", matchResult);
-
-        const matchQuery = `
-          INSERT INTO match_results (user_id, vacancy_id, cosine_score, composite_score, missing_skills, is_eligible, created_at)
-          VALUES ($1, $2, $3, $4, $5, $6, NOW())
-          RETURNING match_id
-        `;
-
-        const savedMatch = await pool.query(matchQuery, [
-          cv.user_id,
-          job.vacancy_id,
-          matchResult.cosine_similarity,
-          matchResult.final_score,
-          matchResult.missing_skills,
-          matchResult.is_eligible,
-        ]);
-
-        // Send email if score >= 65%
-        if (matchResult.is_eligible) {
-          try {
-            const userResult = await pool.query(
-              "SELECT name, email FROM users WHERE user_id = $1",
-              [cv.user_id],
-            );
-            const user = userResult.rows[0];
-            if (user) {
-              const orgResult = await pool.query(
-                "SELECT company_name FROM organisations WHERE org_id = $1",
-                [org_id],
-              );
-              const orgName =
-                orgResult.rows[0]?.company_name || "The Organisation";
-              await sendMatchNotification(
-                user.email,
-                user.name,
-                job.title,
-                orgName,
-                matchResult.final_score,
-                matchResult.missing_skills,
-              );
-              console.log(`Email sent to ${user.email} for ${job.title}`);
-
-              await pool.query(
-                `INSERT INTO notifications (match_id, recipient_email, status, sent_at)
-                 VALUES ($1, $2, 'sent', NOW())`,
-                [savedMatch.rows[0].match_id, user.email],
-              );
-            }
-          } catch (emailError) {
-            console.error("Email error:", emailError);
-          }
-        }
-      } catch (matchError) {
-        console.error("Error matching CV:", matchError);
-      }
-    }
 
     res.status(201).json({
       message: "Job posted successfully",
@@ -144,6 +76,7 @@ router.post("/", auth, async (req, res) => {
         required_skills: parsedData.required_skills,
         experience_level: job.experience_level,
         employment_type: job.employment_type,
+        category: job.category,
         deadline: job.deadline,
         created_at: job.created_at,
       },
@@ -162,14 +95,38 @@ router.post("/", auth, async (req, res) => {
 // GET /api/jobs
 router.get("/", async (req, res) => {
   try {
-    const query = `
+    const { category, page = 1, limit = 10 } = req.query;
+    const offset = (page - 1) * limit;
+
+    let query = `
       SELECT j.*, o.company_name 
       FROM job_vacancies j
       JOIN organisations o ON j.org_id = o.org_id
-      ORDER BY j.created_at DESC
+      WHERE j.deadline >= CURRENT_DATE
+    `;
+    let countQuery = `
+      SELECT COUNT(*) 
+      FROM job_vacancies j
+      WHERE j.deadline >= CURRENT_DATE
     `;
 
-    const result = await pool.query(query);
+    const params = [];
+    const countParams = [];
+
+    if (category && category !== "All") {
+      params.push(category);
+      countParams.push(category);
+      query += ` AND j.category = $${params.length}`;
+      countQuery += ` AND j.category = $${countParams.length}`;
+    }
+
+    query += ` ORDER BY j.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    params.push(limit, offset);
+
+    const result = await pool.query(query, params);
+    const countResult = await pool.query(countQuery, countParams);
+    const totalCount = parseInt(countResult.rows[0].count);
+
     const jobs = result.rows.map((job) => ({
       vacancy_id: job.vacancy_id,
       org_id: job.org_id,
@@ -180,20 +137,198 @@ router.get("/", async (req, res) => {
       experience_level: job.experience_level,
       employment_type: job.employment_type,
       deadline: job.deadline,
+      category: job.category,
       created_at: job.created_at,
     }));
 
     res.json({
       jobs,
       count: jobs.length,
+      totalCount,
+      totalPages: Math.ceil(totalCount / limit),
+      currentPage: parseInt(page),
     });
   } catch (error) {
     console.error("Error fetching jobs:", error);
     res.status(500).json({
-      error: {
-        message: "Error fetching jobs",
-        status: 500,
+      error: { message: "Error fetching jobs", status: 500 },
+    });
+  }
+});
+
+// GET /api/jobs/:id - fetch single job
+router.get("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const query = `
+      SELECT j.*, o.company_name
+      FROM job_vacancies j
+      JOIN organisations o ON j.org_id = o.org_id
+      WHERE j.vacancy_id = $1
+    `;
+
+    const result = await pool.query(query, [id]);
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        error: { message: "Job not found", status: 404 },
+      });
+    }
+
+    const job = result.rows[0];
+
+    res.json({
+      job: {
+        vacancy_id: job.vacancy_id,
+        org_id: job.org_id,
+        company_name: job.company_name,
+        title: job.title,
+        description: job.description,
+        required_skills: job.required_skills || [],
+        experience_level: job.experience_level,
+        employment_type: job.employment_type,
+        deadline: job.deadline,
+        category: job.category,
+        created_at: job.created_at,
       },
+    });
+  } catch (error) {
+    console.error("Error fetching job:", error);
+    res.status(500).json({
+      error: { message: "Error fetching job", status: 500 },
+    });
+  }
+});
+
+// PUT /api/jobs/:id - update an existing job (organisation only)
+router.put("/:id", auth, async (req, res) => {
+  try {
+    const { id: org_id, user_type } = req.user;
+    if (user_type !== "organisation") {
+      return res.status(403).json({
+        error: { message: "Only organisations can edit jobs", status: 403 },
+      });
+    }
+
+    const vacancy_id = req.params.id;
+
+    // verify job exists and belongs to organisation
+    const existing = await pool.query(
+      `SELECT * FROM job_vacancies WHERE vacancy_id = $1`,
+      [vacancy_id],
+    );
+
+    if (existing.rowCount === 0) {
+      return res.status(404).json({
+        error: { message: "Job not found", status: 404 },
+      });
+    }
+
+    if (existing.rows[0].org_id !== org_id) {
+      return res.status(403).json({
+        error: { message: "Not allowed to edit this job", status: 403 },
+      });
+    }
+
+    const {
+      title,
+      description,
+      experience_level,
+      employment_type,
+      deadline,
+      category,
+    } = req.body;
+
+    // If title or description changed (or provided), re-run parsing to get required_skills
+    let parsedData = {};
+    if (title || description) {
+      const pythonServiceUrl =
+        process.env.PYTHON_SERVICE_URL || "http://localhost:8000";
+      try {
+        const response = await axios.post(`${pythonServiceUrl}/api/parse/job`, {
+          title: title || existing.rows[0].title,
+          company_name: req.user.name,
+          description: description || existing.rows[0].description,
+        });
+        parsedData = response.data || {};
+      } catch (err) {
+        // parsing failure shouldn't block update; log and continue
+        console.warn(
+          "Parsing service error during job update:",
+          err.message || err,
+        );
+      }
+    }
+
+    const fields = [];
+    const values = [];
+    let idx = 1;
+
+    if (title) {
+      fields.push(`title = $${idx++}`);
+      values.push(title);
+    }
+    if (description) {
+      fields.push(`description = $${idx++}`);
+      values.push(description);
+    }
+    if (experience_level) {
+      fields.push(`experience_level = $${idx++}`);
+      values.push(experience_level);
+    }
+    if (employment_type) {
+      fields.push(`employment_type = $${idx++}`);
+      values.push(employment_type);
+    }
+    if (deadline) {
+      fields.push(`deadline = $${idx++}`);
+      values.push(deadline);
+    }
+    if (category) {
+      fields.push(`category = $${idx++}`);
+      values.push(category);
+    }
+    if (parsedData.required_skills) {
+      fields.push(`required_skills = $${idx++}`);
+      values.push(parsedData.required_skills);
+    }
+    // if parser returned an experience level and none provided explicitly, update it
+    if (parsedData.experience_level && !experience_level) {
+      fields.push(`experience_level = $${idx++}`);
+      values.push(parsedData.experience_level);
+    }
+
+    if (fields.length === 0) {
+      return res.status(400).json({
+        error: { message: "No updatable fields provided", status: 400 },
+      });
+    }
+
+    const query = `UPDATE job_vacancies SET ${fields.join(", ")} WHERE vacancy_id = $${idx} RETURNING *`;
+    values.push(vacancy_id);
+
+    const result = await pool.query(query, values);
+
+    const job = result.rows[0];
+
+    res.json({
+      message: "Job updated successfully",
+      job: {
+        vacancy_id: job.vacancy_id,
+        org_id: job.org_id,
+        title: job.title,
+        description: job.description,
+        required_skills: job.required_skills || [],
+        experience_level: job.experience_level,
+        employment_type: job.employment_type,
+        category: job.category,
+        deadline: job.deadline,
+        created_at: job.created_at,
+      },
+    });
+  } catch (error) {
+    console.error("Error updating job:", error);
+    res.status(500).json({
+      error: { message: "Error updating job", status: 500 },
     });
   }
 });

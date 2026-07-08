@@ -5,6 +5,7 @@ import JobSeekerDashboard from "./pages/JobSeekerDashboard";
 import OrganisationDashboard from "./pages/OrganisationDashboard";
 import CVUpload from "./pages/CVUpload";
 import PostJob from "./pages/PostJob";
+import EditJob from "./pages/EditJob";
 import ProtectedRoute from "./components/ProtectedRoute";
 
 function App() {
@@ -47,6 +48,14 @@ function App() {
         element={
           <ProtectedRoute allowedRole="organisation">
             <PostJob />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/jobs/:id/edit"
+        element={
+          <ProtectedRoute allowedRole="organisation">
+            <EditJob />
           </ProtectedRoute>
         }
       />

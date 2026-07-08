@@ -1,10 +1,11 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import api from "../api/axios";
 import jobCategories from "../constants/jobCategories";
 
-function PostJob() {
+function EditJob() {
+  const { id } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
@@ -15,9 +16,32 @@ function PostJob() {
     deadline: "",
     category: jobCategories[0],
   });
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  useEffect(() => {
+    const fetchJob = async () => {
+      try {
+        const res = await api.get(`/jobs/${id}`);
+        const job = res.data.job;
+        setFormData({
+          title: job.title || "",
+          description: job.description || "",
+          experience_level: job.experience_level || "Entry Level",
+          employment_type: job.employment_type || "Full Time",
+          deadline: job.deadline ? job.deadline.split("T")[0] : "",
+          category: job.category || "Information Technology",
+        });
+      } catch (err) {
+        setError(err.response?.data?.error?.message || "Failed to load job.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchJob();
+  }, [id]);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -27,26 +51,29 @@ function PostJob() {
     e.preventDefault();
     setError("");
     setSuccess("");
-    setLoading(true);
+    setSaving(true);
 
     try {
-      await api.post("/jobs", formData);
-      setSuccess("Job posted successfully! Redirecting...");
-      setTimeout(() => {
-        navigate("/dashboard/organisation");
-      }, 2000);
+      await api.put(`/jobs/${id}`, formData);
+      setSuccess("Job updated successfully! Redirecting...");
+      setTimeout(() => navigate("/dashboard/organisation"), 1500);
     } catch (err) {
-      setError(
-        err.response?.data?.error?.message || "Failed to post job. Try again.",
-      );
+      setError(err.response?.data?.error?.message || "Failed to update job.");
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-gray-500">Loading job...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Navbar */}
       <nav className="bg-white shadow-sm px-6 py-4 flex justify-between items-center">
         <h1 className="text-lg font-bold text-blue-600">ResumeMatch AI</h1>
         <div className="flex items-center gap-4">
@@ -62,20 +89,16 @@ function PostJob() {
 
       <div className="max-w-2xl mx-auto px-4 py-12">
         <div className="text-center mb-8">
-          <h2 className="text-2xl font-bold text-gray-800">Post a Job</h2>
-          <p className="text-gray-500 text-sm mt-2">
-            Fill in the details below to post a new job vacancy
-          </p>
+          <h2 className="text-2xl font-bold text-gray-800">Edit Job</h2>
+          <p className="text-gray-500 text-sm mt-2">Update the job details</p>
         </div>
 
-        {/* Error message */}
         {error && (
           <div className="bg-red-50 text-red-600 text-sm px-4 py-3 rounded-lg mb-4">
             {error}
           </div>
         )}
 
-        {/* Success message */}
         {success && (
           <div className="bg-green-50 text-green-600 text-sm px-4 py-3 rounded-lg mb-4">
             {success}
@@ -84,11 +107,8 @@ function PostJob() {
 
         <div className="bg-white rounded-2xl shadow-md p-8">
           <form onSubmit={handleSubmit} className="space-y-5">
-            {/* Job Title */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Job Title
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Job Title</label>
               <input
                 type="text"
                 name="title"
@@ -100,11 +120,8 @@ function PostJob() {
               />
             </div>
 
-            {/* Job Description */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Job Description
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Job Description</label>
               <textarea
                 name="description"
                 value={formData.description}
@@ -114,16 +131,10 @@ function PostJob() {
                 rows={6}
                 className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
               />
-              <p className="text-xs text-gray-400 mt-1">
-                Include required skills in the description for better matching
-              </p>
             </div>
 
-            {/* Experience Level */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Experience Level
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Experience Level</label>
               <select
                 name="experience_level"
                 value={formData.experience_level}
@@ -137,11 +148,8 @@ function PostJob() {
               </select>
             </div>
 
-            {/* Employment Type */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Employment Type
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Employment Type</label>
               <select
                 name="employment_type"
                 value={formData.employment_type}
@@ -155,11 +163,8 @@ function PostJob() {
               </select>
             </div>
 
-            {/* Deadline */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Application Deadline
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Application Deadline</label>
               <input
                 type="date"
                 name="deadline"
@@ -171,11 +176,8 @@ function PostJob() {
               />
             </div>
 
-            {/* Category */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Job Category
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Job Category</label>
               <select
                 name="category"
                 value={formData.category}
@@ -190,13 +192,12 @@ function PostJob() {
               </select>
             </div>
 
-            {/* Submit */}
             <button
               type="submit"
-              disabled={loading}
+              disabled={saving}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-xl text-sm transition disabled:opacity-50"
             >
-              {loading ? "Posting job..." : "Post Job"}
+              {saving ? "Saving..." : "Save Changes"}
             </button>
           </form>
         </div>
@@ -205,4 +206,4 @@ function PostJob() {
   );
 }
 
-export default PostJob;
+export default EditJob;

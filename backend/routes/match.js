@@ -121,8 +121,9 @@ router.get("/candidates/:jobId", auth, async (req, res) => {
   try {
     const { id: user_id, user_type } = req.user;
     const { jobId } = req.params;
+    const { page = 1, limit = 10 } = req.query;
+    const offset = (page - 1) * limit;
 
-    // Only organisations can view candidates for their jobs
     if (user_type !== "organisation") {
       return res.status(403).json({
         error: {
@@ -132,7 +133,6 @@ router.get("/candidates/:jobId", auth, async (req, res) => {
       });
     }
 
-    // Verify job belongs to the organisation
     const jobQuery =
       "SELECT * FROM job_vacancies WHERE vacancy_id = $1 AND org_id = $2";
     const jobResult = await pool.query(jobQuery, [jobId, user_id]);
@@ -146,16 +146,31 @@ router.get("/candidates/:jobId", auth, async (req, res) => {
       });
     }
 
-    // Get match results for this job
+    const countQuery = `
+      SELECT COUNT(*) FROM match_results mr
+      JOIN applications a ON a.user_id = mr.user_id AND a.vacancy_id = mr.vacancy_id
+      WHERE mr.vacancy_id = $1
+    `;
+    const countResult = await pool.query(countQuery, [jobId]);
+    const totalCount = parseInt(countResult.rows[0].count);
+
     const matchQuery = `
-      SELECT mr.*, u.name, u.email 
+      SELECT mr.*, u.name, u.email, a.applied_at 
       FROM match_results mr
       JOIN users u ON mr.user_id = u.user_id
+      JOIN applications a ON a.user_id = mr.user_id AND a.vacancy_id = mr.vacancy_id
       WHERE mr.vacancy_id = $1
-      ORDER BY mr.composite_score DESC
+      ORDER BY 
+        CASE mr.status 
+          WHEN 'shortlisted' THEN 1 
+          WHEN 'applied' THEN 2 
+          WHEN 'rejected' THEN 3 
+        END,
+        mr.composite_score DESC
+      LIMIT $2 OFFSET $3
     `;
 
-    const matchResult = await pool.query(matchQuery, [jobId]);
+    const matchResult = await pool.query(matchQuery, [jobId, limit, offset]);
     const candidates = matchResult.rows.map((match) => ({
       match_id: match.match_id,
       user_id: match.user_id,
@@ -165,6 +180,8 @@ router.get("/candidates/:jobId", auth, async (req, res) => {
       composite_score: match.composite_score,
       missing_skills: match.missing_skills || [],
       is_eligible: match.is_eligible,
+      status: match.status || "applied",
+      applied_at: match.applied_at,
       created_at: match.created_at,
     }));
 
@@ -172,14 +189,14 @@ router.get("/candidates/:jobId", auth, async (req, res) => {
       job_id: jobId,
       candidates,
       count: candidates.length,
+      totalCount,
+      totalPages: Math.ceil(totalCount / limit),
+      currentPage: parseInt(page),
     });
   } catch (error) {
     console.error("Error fetching candidates:", error);
     res.status(500).json({
-      error: {
-        message: "Error fetching candidates",
-        status: 500,
-      },
+      error: { message: "Error fetching candidates", status: 500 },
     });
   }
 });
@@ -210,6 +227,60 @@ router.get("/user", auth, async (req, res) => {
         message: "Error fetching matches",
         status: 500,
       },
+    });
+  }
+});
+
+// PATCH /api/match/candidates/:match_id/status
+router.patch("/candidates/:match_id/status", auth, async (req, res) => {
+  try {
+    const { id: org_id, user_type } = req.user;
+    const { match_id } = req.params;
+    const { status } = req.body;
+
+    if (user_type !== "organisation") {
+      return res.status(403).json({
+        error: {
+          message: "Only organisations can update candidate status",
+          status: 403,
+        },
+      });
+    }
+
+    if (!["shortlisted", "rejected", "applied"].includes(status)) {
+      return res.status(400).json({
+        error: { message: "Invalid status value", status: 400 },
+      });
+    }
+
+    // Verify this match belongs to a job owned by this organisation
+    const verifyQuery = `
+      SELECT mr.match_id 
+      FROM match_results mr
+      JOIN job_vacancies jv ON mr.vacancy_id = jv.vacancy_id
+      WHERE mr.match_id = $1 AND jv.org_id = $2
+    `;
+    const verifyResult = await pool.query(verifyQuery, [match_id, org_id]);
+
+    if (verifyResult.rows.length === 0) {
+      return res.status(404).json({
+        error: { message: "Candidate not found or access denied", status: 404 },
+      });
+    }
+
+    const result = await pool.query(
+      `UPDATE match_results SET status = $1 WHERE match_id = $2 RETURNING *`,
+      [status, match_id],
+    );
+
+    res.json({
+      message: `Candidate ${status} successfully`,
+      match: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Error updating candidate status:", error);
+    res.status(500).json({
+      error: { message: "Error updating candidate status", status: 500 },
     });
   }
 });

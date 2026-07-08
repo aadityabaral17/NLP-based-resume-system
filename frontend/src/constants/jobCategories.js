@@ -1,0 +1,28 @@
+const jobCategories = [
+  "Accountant",
+  "Advocate",
+  "Agriculture",
+  "Apparel",
+  "Arts",
+  "Automobile",
+  "Aviation",
+  "Banking",
+  "BPO",
+  "Business Development",
+  "Chef",
+  "Construction",
+  "Consultant",
+  "Designer",
+  "Digital Media",
+  "Engineering",
+  "Finance",
+  "Fitness",
+  "Healthcare",
+  "HR",
+  "Information Technology",
+  "Public Relations",
+  "Sales",
+  "Teacher",
+];
+
+export default jobCategories;

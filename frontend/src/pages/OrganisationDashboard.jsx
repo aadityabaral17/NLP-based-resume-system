@@ -11,6 +11,8 @@ function OrganisationDashboard() {
   const [selectedJob, setSelectedJob] = useState(null);
   const [candidates, setCandidates] = useState([]);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
+  const [candidatePage, setCandidatePage] = useState(1);
+  const [candidateTotalPages, setCandidateTotalPages] = useState(1);
 
   useEffect(() => {
     fetchJobs();
@@ -28,12 +30,16 @@ function OrganisationDashboard() {
     }
   };
 
-  const fetchCandidates = async (vacancy_id) => {
+  const fetchCandidates = async (vacancy_id, page = 1) => {
     setLoadingCandidates(true);
     setSelectedJob(vacancy_id);
+    setCandidatePage(page);
     try {
-      const res = await api.get(`/match/candidates/${vacancy_id}`);
+      const res = await api.get(
+        `/match/candidates/${vacancy_id}?page=${page}&limit=5`,
+      );
       setCandidates(res.data.candidates || []);
+      setCandidateTotalPages(res.data.totalPages || 1);
     } catch (err) {
       console.error("Error fetching candidates:", err);
     } finally {
@@ -57,6 +63,21 @@ function OrganisationDashboard() {
     } catch (err) {
       console.error("Export error:", err);
     }
+  };
+
+  const handleUpdateStatus = async (match_id, status) => {
+    try {
+      await api.patch(`/match/candidates/${match_id}/status`, { status });
+      fetchCandidates(selectedJob, candidatePage);
+    } catch (err) {
+      console.error("Error updating status:", err);
+    }
+  };
+
+  const getStatusBadge = (status) => {
+    if (status === "shortlisted") return "bg-green-100 text-green-700";
+    if (status === "rejected") return "bg-red-100 text-red-700";
+    return "bg-gray-100 text-gray-600";
   };
 
   const handleLogout = () => {
@@ -153,7 +174,7 @@ function OrganisationDashboard() {
                   <div
                     key={job.vacancy_id}
                     onClick={() => fetchCandidates(job.vacancy_id)}
-                    className={`bg-white rounded-xl p-4 shadow-sm cursor-pointer border-2 transition ${
+                    className={`relative group bg-white rounded-xl p-4 shadow-sm cursor-pointer border-2 transition ${
                       selectedJob === job.vacancy_id
                         ? "border-blue-500"
                         : "border-transparent hover:border-blue-200"
@@ -178,6 +199,30 @@ function OrganisationDashboard() {
                         ))}
                       </div>
                     )}
+                    <div className="absolute top-3 right-3 flex gap-2 opacity-0 transform translate-y-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-y-0">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate(`/jobs/${job.vacancy_id}/edit`);
+                        }}
+                        aria-label="Edit job"
+                        title="Edit job"
+                        className="text-xs bg-yellow-100 text-yellow-800 px-3 py-1 rounded-md shadow-sm hover:bg-yellow-200"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleExportCSV(job.vacancy_id);
+                        }}
+                        aria-label="Export candidates CSV"
+                        title="Export candidates CSV"
+                        className="text-xs bg-green-100 text-green-800 px-3 py-1 rounded-md shadow-sm hover:bg-green-200"
+                      >
+                        Export CSV
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -212,17 +257,27 @@ function OrganisationDashboard() {
                 {candidates.map((candidate, index) => (
                   <div
                     key={candidate.match_id}
-                    className="bg-white rounded-xl p-4 shadow-sm"
+                    className={`bg-white rounded-xl p-4 shadow-sm ${
+                      candidate.status === "rejected" ? "opacity-60" : ""
+                    }`}
                   >
                     <div className="flex justify-between items-start">
-                      <div>
-                        <div className="flex items-center gap-2">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs text-gray-400">
                             #{index + 1}
                           </span>
                           <p className="font-medium text-gray-800">
                             {candidate.name}
                           </p>
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full font-medium ${getStatusBadge(candidate.status)}`}
+                          >
+                            {candidate.status === "shortlisted" &&
+                              "★ Shortlisted"}
+                            {candidate.status === "rejected" && "✕ Rejected"}
+                            {candidate.status === "applied" && "Applied"}
+                          </span>
                         </div>
                         <p className="text-sm text-gray-500">
                           {candidate.email}
@@ -241,6 +296,49 @@ function OrganisationDashboard() {
                               ))}
                           </div>
                         )}
+
+                        {/* Action buttons */}
+                        <div className="flex gap-2 mt-3">
+                          {candidate.status !== "shortlisted" && (
+                            <button
+                              onClick={() =>
+                                handleUpdateStatus(
+                                  candidate.match_id,
+                                  "shortlisted",
+                                )
+                              }
+                              className="text-xs bg-green-50 text-green-700 hover:bg-green-100 px-3 py-1.5 rounded-lg transition"
+                            >
+                              ★ Shortlist
+                            </button>
+                          )}
+                          {candidate.status !== "rejected" && (
+                            <button
+                              onClick={() =>
+                                handleUpdateStatus(
+                                  candidate.match_id,
+                                  "rejected",
+                                )
+                              }
+                              className="text-xs bg-red-50 text-red-700 hover:bg-red-100 px-3 py-1.5 rounded-lg transition"
+                            >
+                              ✕ Reject
+                            </button>
+                          )}
+                          {candidate.status !== "applied" && (
+                            <button
+                              onClick={() =>
+                                handleUpdateStatus(
+                                  candidate.match_id,
+                                  "applied",
+                                )
+                              }
+                              className="text-xs bg-gray-50 text-gray-600 hover:bg-gray-100 px-3 py-1.5 rounded-lg transition"
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <div
                         className={`text-sm font-bold px-3 py-1 rounded-xl ${getScoreColor(candidate.composite_score * 100)}`}
@@ -250,6 +348,36 @@ function OrganisationDashboard() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Pagination controls — MOVE HERE, inside this div */}
+            {candidateTotalPages > 1 && (
+              <div className="flex justify-center items-center gap-2 mt-4">
+                <button
+                  onClick={() =>
+                    fetchCandidates(selectedJob, Math.max(1, candidatePage - 1))
+                  }
+                  disabled={candidatePage === 1}
+                  className="text-sm px-3 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  ← Previous
+                </button>
+                <span className="text-sm text-gray-500 px-3">
+                  Page {candidatePage} of {candidateTotalPages}
+                </span>
+                <button
+                  onClick={() =>
+                    fetchCandidates(
+                      selectedJob,
+                      Math.min(candidateTotalPages, candidatePage + 1),
+                    )
+                  }
+                  disabled={candidatePage === candidateTotalPages}
+                  className="text-sm px-3 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  Next →
+                </button>
               </div>
             )}
           </div>

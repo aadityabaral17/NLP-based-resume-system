@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import api from "../api/axios";
 import jobCategories from "../constants/jobCategories";
+import ScoreDial from "../components/ScoreDial";
+import StatusBadge from "../components/StatusBadge";
 
 function JobSeekerDashboard() {
   const { user, logout } = useAuth();
@@ -16,12 +18,11 @@ function JobSeekerDashboard() {
   const [cancellingId, setCancellingId] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [message, setMessage] = useState("");
-
-  const categories = ["All", ...jobCategories];
-
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const jobsPerPage = 10;
+
+  const categories = ["All", ...jobCategories];
 
   useEffect(() => {
     fetchData();
@@ -93,20 +94,6 @@ function JobSeekerDashboard() {
   const canCancel = (vacancy_id) =>
     applications.find((a) => a.vacancy_id === vacancy_id)?.can_cancel;
 
-  const getScoreColor = (score) => {
-    if (score >= 70) return "text-green-600 bg-green-50";
-    if (score >= 50) return "text-yellow-600 bg-yellow-50";
-    return "text-red-600 bg-red-50";
-  };
-
-  const getApplicationStatusBadge = (status) => {
-    if (status === "shortlisted")
-      return { text: "★ Shortlisted", color: "bg-green-100 text-green-700" };
-    if (status === "rejected")
-      return { text: "✕ Not Selected", color: "bg-red-100 text-red-700" };
-    return { text: "⏳ Under Review", color: "bg-yellow-100 text-yellow-700" };
-  };
-
   const handleLogout = () => {
     logout();
     navigate("/login");
@@ -114,28 +101,28 @@ function JobSeekerDashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-gray-500">Loading...</p>
+      <div className="min-h-screen bg-mist flex items-center justify-center">
+        <p className="text-slate">Loading...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-mist">
       {/* Navbar */}
-      <nav className="bg-white shadow-sm px-6 py-4 flex justify-between items-center">
-        <h1 className="text-lg font-bold text-blue-600">ResumeMatch AI</h1>
+      <nav className="bg-white border-b border-line px-6 py-4 flex justify-between items-center">
+        <span className="font-serif text-lg text-ink">ResumeMatch</span>
         <div className="flex items-center gap-4">
-          <span className="text-sm text-gray-600">Hello, {user?.name}</span>
+          <span className="text-sm text-slate">Hello, {user?.name}</span>
           <button
             onClick={() => navigate("/cv/upload")}
-            className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
+            className="text-sm bg-indigo text-white px-4 py-2 rounded-lg hover:bg-indigo-dark transition"
           >
             Upload CV
           </button>
           <button
             onClick={handleLogout}
-            className="text-sm text-gray-500 hover:text-red-500"
+            className="text-sm text-slate hover:text-danger transition"
           >
             Logout
           </button>
@@ -144,9 +131,9 @@ function JobSeekerDashboard() {
 
       <div className="max-w-5xl mx-auto px-4 py-8">
         {/* Welcome banner */}
-        <div className="bg-blue-600 text-white rounded-2xl p-6 mb-8">
-          <h2 className="text-xl font-bold">Welcome back, {user?.name}!</h2>
-          <p className="text-blue-100 text-sm mt-1">
+        <div className="bg-ink text-white rounded-2xl p-6 mb-8">
+          <h2 className="font-serif text-xl">Welcome back, {user?.name}</h2>
+          <p className="text-white/70 text-sm mt-1">
             {applications.length > 0
               ? `You have applied to ${applications.length} job${applications.length > 1 ? "s" : ""}`
               : "Browse jobs below and apply to get matched"}
@@ -158,8 +145,8 @@ function JobSeekerDashboard() {
           <div
             className={`rounded-xl p-4 mb-6 text-sm font-medium ${
               message.includes("success") || message.includes("Applied")
-                ? "bg-green-50 text-green-700"
-                : "bg-red-50 text-red-700"
+                ? "bg-success-light text-success"
+                : "bg-danger-light text-danger"
             }`}
           >
             {message}
@@ -168,53 +155,47 @@ function JobSeekerDashboard() {
 
         {/* Stats row */}
         <div className="grid grid-cols-3 gap-4 mb-8">
-          <div className="bg-white rounded-xl p-5 shadow-sm text-center">
-            <p className="text-3xl font-bold text-blue-600">{jobs.length}</p>
-            <p className="text-sm text-gray-500 mt-1">Available Jobs</p>
+          <div className="bg-white rounded-xl p-5 border border-line text-center">
+            <p className="font-serif text-3xl text-indigo">{jobs.length}</p>
+            <p className="text-sm text-slate mt-1">Available jobs</p>
           </div>
-          <div className="bg-white rounded-xl p-5 shadow-sm text-center">
-            <p className="text-3xl font-bold text-green-600">
+          <div className="bg-white rounded-xl p-5 border border-line text-center">
+            <p className="font-serif text-3xl text-ink">
               {applications.length}
             </p>
-            <p className="text-sm text-gray-500 mt-1">Applied Jobs</p>
+            <p className="text-sm text-slate mt-1">Applied jobs</p>
           </div>
-          <div className="bg-white rounded-xl p-5 shadow-sm text-center">
-            <p className="text-3xl font-bold text-purple-600">
+          <div className="bg-white rounded-xl p-5 border border-line text-center">
+            <p className="font-serif text-3xl text-amber">
               {matches.filter((m) => m.is_eligible).length}
             </p>
-            <p className="text-sm text-gray-500 mt-1">Eligible Matches</p>
+            <p className="text-sm text-slate mt-1">Eligible matches</p>
           </div>
         </div>
 
-        {/* My Applications with match scores */}
+        {/* My Applications */}
         {applications.length > 0 && (
           <div className="mb-8">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">
-              My Applications
+            <h3 className="font-serif text-lg text-ink mb-4">
+              My applications
             </h3>
             <div className="space-y-3">
               {applications.map((app) => (
                 <div
                   key={app.application_id}
-                  className="bg-white rounded-xl p-5 shadow-sm"
+                  className="bg-white rounded-xl p-5 border border-line"
                 >
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-medium text-gray-800">{app.title}</p>
-                        <span
-                          className={`text-xs px-2 py-0.5 rounded-full font-medium ${getApplicationStatusBadge(app.status).color}`}
-                        >
-                          {getApplicationStatusBadge(app.status).text}
-                        </span>
+                        <p className="font-medium text-ink">{app.title}</p>
+                        <StatusBadge status={app.status} />
                       </div>
-                      <p className="text-sm text-gray-500">
-                        {app.company_name}
-                      </p>
-                      <p className="text-xs text-gray-400 mt-1">
+                      <p className="text-sm text-slate">{app.company_name}</p>
+                      <p className="text-xs text-slate/70 mt-1">
                         Applied: {new Date(app.applied_at).toLocaleDateString()}
                         {app.can_cancel && app.status !== "rejected" && (
-                          <span className="ml-2 text-green-600">
+                          <span className="ml-2 text-success">
                             · Can cancel within 24hrs
                           </span>
                         )}
@@ -224,7 +205,7 @@ function JobSeekerDashboard() {
                           {app.missing_skills.slice(0, 3).map((skill, i) => (
                             <span
                               key={i}
-                              className="text-xs bg-red-50 text-red-500 px-2 py-1 rounded-full"
+                              className="text-xs bg-danger-light text-danger px-2 py-1 rounded-full"
                             >
                               Missing: {skill}
                             </span>
@@ -234,11 +215,7 @@ function JobSeekerDashboard() {
                     </div>
                     <div className="flex items-center gap-3">
                       {app.composite_score && (
-                        <div
-                          className={`text-lg font-bold px-4 py-2 rounded-xl ${getScoreColor(app.composite_score * 100)}`}
-                        >
-                          {Math.round(app.composite_score * 100)}%
-                        </div>
+                        <ScoreDial score={app.composite_score * 100} />
                       )}
                       {app.can_cancel &&
                         app.status !== "rejected" &&
@@ -246,7 +223,7 @@ function JobSeekerDashboard() {
                           <button
                             onClick={() => handleCancel(app.vacancy_id)}
                             disabled={cancellingId === app.vacancy_id}
-                            className="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-3 py-2 rounded-lg transition disabled:opacity-50"
+                            className="text-xs bg-danger-light text-danger hover:opacity-80 px-3 py-2 rounded-lg transition disabled:opacity-50"
                           >
                             {cancellingId === app.vacancy_id
                               ? "Cancelling..."
@@ -263,7 +240,7 @@ function JobSeekerDashboard() {
 
         {/* Category Filter */}
         <div className="mb-6 flex items-center gap-3">
-          <label className="text-sm font-medium text-gray-700">
+          <label className="text-sm font-medium text-ink">
             Filter by category:
           </label>
           <select
@@ -272,7 +249,7 @@ function JobSeekerDashboard() {
               setSelectedCategory(e.target.value);
               setCurrentPage(1);
             }}
-            className="border border-gray-300 rounded-lg px-4 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-55"
+            className="border border-line rounded-lg px-4 py-2 text-sm bg-white text-ink focus:outline-none focus:ring-2 focus:ring-indigo/30 focus:border-indigo min-w-55"
           >
             {categories.map((cat) => (
               <option key={cat} value={cat}>
@@ -286,7 +263,7 @@ function JobSeekerDashboard() {
                 setSelectedCategory("All");
                 setCurrentPage(1);
               }}
-              className="text-xs text-blue-600 hover:underline"
+              className="text-xs text-indigo hover:underline"
             >
               Clear filter
             </button>
@@ -295,40 +272,37 @@ function JobSeekerDashboard() {
 
         {/* All Available Jobs */}
         <div>
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">
-            Available Jobs
+          <h3 className="font-serif text-lg text-ink mb-4">
+            Available jobs
             {selectedCategory !== "All" && (
-              <span className="ml-2 text-sm text-blue-600 font-normal">
+              <span className="ml-2 text-sm text-indigo font-sans font-normal">
                 · {selectedCategory}
               </span>
             )}
           </h3>
           {jobs.length === 0 ? (
-            <div className="bg-white rounded-xl p-8 text-center shadow-sm">
-              <p className="text-gray-400">No jobs found in this category</p>
+            <div className="bg-white rounded-xl p-8 text-center border border-line">
+              <p className="text-slate">No jobs found in this category</p>
             </div>
           ) : (
             <div className="space-y-3">
               {jobs.map((job) => (
                 <div
                   key={job.vacancy_id}
-                  className="bg-white rounded-xl p-5 shadow-sm"
+                  className="bg-white rounded-xl p-5 border border-line"
                 >
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="font-medium text-gray-800">{job.title}</p>
+                        <p className="font-medium text-ink">{job.title}</p>
                         {job.category && (
-                          <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">
+                          <span className="text-xs bg-indigo-light text-indigo px-2 py-0.5 rounded-full">
                             {job.category}
                           </span>
                         )}
                       </div>
-
-                      <p className="text-sm text-gray-500">
-                        {job.company_name}
-                      </p>
-                      <p className="text-sm text-gray-400 mt-1">
+                      <p className="text-sm text-slate">{job.company_name}</p>
+                      <p className="text-sm text-slate/80 mt-1">
                         {job.employment_type} · {job.experience_level}
                       </p>
                       {job.required_skills?.length > 0 && (
@@ -336,30 +310,29 @@ function JobSeekerDashboard() {
                           {job.required_skills.slice(0, 4).map((skill, i) => (
                             <span
                               key={i}
-                              className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-full"
+                              className="text-xs bg-indigo-light text-indigo px-2 py-1 rounded-full"
                             >
                               {skill}
                             </span>
                           ))}
                         </div>
                       )}
-                      <p className="text-xs text-gray-400 mt-2">
+                      <p className="text-xs text-slate/70 mt-2">
                         Deadline: {new Date(job.deadline).toLocaleDateString()}
                       </p>
                     </div>
 
-                    {/* Apply / Applied buttons */}
                     <div className="ml-4 shrink-0">
                       {isApplied(job.vacancy_id) ? (
                         <div className="flex flex-col items-end gap-2">
-                          <span className="text-xs bg-green-50 text-green-600 px-3 py-2 rounded-lg font-medium">
+                          <span className="text-xs bg-success-light text-success px-3 py-2 rounded-lg font-medium">
                             ✓ Applied
                           </span>
                           {canCancel(job.vacancy_id) && (
                             <button
                               onClick={() => handleCancel(job.vacancy_id)}
                               disabled={cancellingId === job.vacancy_id}
-                              className="text-xs bg-red-50 text-red-600 hover:bg-red-100 px-3 py-2 rounded-lg transition disabled:opacity-50"
+                              className="text-xs bg-danger-light text-danger hover:opacity-80 px-3 py-2 rounded-lg transition disabled:opacity-50"
                             >
                               {cancellingId === job.vacancy_id
                                 ? "Cancelling..."
@@ -371,7 +344,7 @@ function JobSeekerDashboard() {
                         <button
                           onClick={() => handleApply(job.vacancy_id)}
                           disabled={applyingId === job.vacancy_id}
-                          className="text-sm bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition disabled:opacity-50"
+                          className="text-sm bg-indigo hover:bg-indigo-dark text-white px-4 py-2 rounded-lg transition disabled:opacity-50"
                         >
                           {applyingId === job.vacancy_id
                             ? "Applying..."
@@ -384,27 +357,25 @@ function JobSeekerDashboard() {
               ))}
             </div>
           )}
-          {/* Pagination controls */}
+
           {totalPages > 1 && (
             <div className="flex justify-center items-center gap-2 mt-6">
               <button
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
-                className="text-sm px-3 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="text-sm px-3 py-2 rounded-lg border border-line text-slate hover:bg-indigo-light disabled:opacity-40 disabled:cursor-not-allowed transition"
               >
                 ← Previous
               </button>
-
-              <span className="text-sm text-gray-500 px-3">
+              <span className="text-sm text-slate px-3">
                 Page {currentPage} of {totalPages}
               </span>
-
               <button
                 onClick={() =>
                   setCurrentPage((p) => Math.min(totalPages, p + 1))
                 }
                 disabled={currentPage === totalPages}
-                className="text-sm px-3 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="text-sm px-3 py-2 rounded-lg border border-line text-slate hover:bg-indigo-light disabled:opacity-40 disabled:cursor-not-allowed transition"
               >
                 Next →
               </button>
@@ -415,27 +386,27 @@ function JobSeekerDashboard() {
         {/* Recommendations Panel */}
         {recommendations && (
           <div className="mt-8">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">
-              Career Recommendations
+            <h3 className="font-serif text-lg text-ink mb-4">
+              Career recommendations
             </h3>
             {recommendations.top_matches?.length > 0 && (
-              <div className="bg-white rounded-xl p-5 shadow-sm mb-4">
-                <h4 className="font-medium text-gray-700 mb-3">
-                  Your Top Job Matches
+              <div className="bg-white rounded-xl p-5 border border-line mb-4">
+                <h4 className="font-medium text-ink mb-3">
+                  Your top job matches
                 </h4>
                 <div className="space-y-2">
                   {recommendations.top_matches.map((match, i) => (
                     <div
                       key={i}
-                      className="flex justify-between items-center py-2 border-b border-gray-100 last:border-0"
+                      className="flex justify-between items-center py-2 border-b border-line last:border-0"
                     >
                       <div>
-                        <p className="text-sm font-medium text-gray-800">
+                        <p className="text-sm font-medium text-ink">
                           {match.job_title}
                         </p>
-                        <p className="text-xs text-gray-500">{match.company}</p>
+                        <p className="text-xs text-slate">{match.company}</p>
                       </div>
-                      <span className="text-sm font-bold text-green-600">
+                      <span className="text-sm font-bold text-amber">
                         {Math.round(match.match_score * 100)}%
                       </span>
                     </div>
@@ -444,8 +415,11 @@ function JobSeekerDashboard() {
               </div>
             )}
             {recommendations.career_tips?.map((category, i) => (
-              <div key={i} className="bg-white rounded-xl p-5 shadow-sm mb-4">
-                <h4 className="font-medium text-gray-700 mb-3">
+              <div
+                key={i}
+                className="bg-white rounded-xl p-5 border border-line mb-4"
+              >
+                <h4 className="font-medium text-ink mb-3">
                   {category.category === "Skill Development" && "📚 "}
                   {category.category === "Job Search Strategy" && "🎯 "}
                   {category.category === "Career Growth" && "🚀 "}
@@ -453,8 +427,8 @@ function JobSeekerDashboard() {
                 </h4>
                 <ul className="space-y-2">
                   {category.tips.map((tip, j) => (
-                    <li key={j} className="text-sm text-gray-600 flex gap-2">
-                      <span className="text-blue-500 mt-0.5">→</span>
+                    <li key={j} className="text-sm text-slate flex gap-2">
+                      <span className="text-indigo mt-0.5">→</span>
                       {tip}
                     </li>
                   ))}

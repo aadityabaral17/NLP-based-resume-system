@@ -92,10 +92,12 @@ function OrganisationDashboard() {
   return (
     <div className="min-h-screen bg-mist">
       {/* Navbar */}
-      <nav className="bg-white border-b border-line px-6 py-4 flex justify-between items-center">
+      <nav className="bg-white border-b border-line px-4 sm:px-6 py-3 sm:py-4 flex flex-wrap justify-between items-center gap-3">
         <span className="font-serif text-lg text-ink">ResumeMatch</span>
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-slate">{user?.name}</span>
+        <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
+          <span className="text-sm text-slate hidden sm:inline">
+            {user?.name}
+          </span>
           <button
             onClick={() => navigate("/jobs/post")}
             className="text-sm bg-indigo text-white px-4 py-2 rounded-lg hover:bg-indigo-dark transition"
@@ -123,7 +125,7 @@ function OrganisationDashboard() {
         </div>
 
         {/* Stats row */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-8">
           <div className="bg-white rounded-xl p-5 border border-line text-center">
             <p className="font-serif text-3xl text-indigo">{jobs.length}</p>
             <p className="text-sm text-slate mt-1">Job postings</p>
@@ -142,7 +144,7 @@ function OrganisationDashboard() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Jobs list */}
           <div>
             <h3 className="font-serif text-lg text-ink mb-4">
@@ -189,7 +191,7 @@ function OrganisationDashboard() {
                         ))}
                       </div>
                     )}
-                    <div className="absolute top-3 right-3 flex gap-2 opacity-0 translate-y-1 transition-all duration-150 group-hover:opacity-100 group-hover:translate-y-0">
+                    <div className="absolute top-3 right-3 flex gap-2 opacity-100 sm:opacity-0 sm:translate-y-1 transition-all duration-150 sm:group-hover:opacity-100 sm:group-hover:translate-y-0">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -247,7 +249,7 @@ function OrganisationDashboard() {
                     key={candidate.match_id}
                     className={`bg-white rounded-xl p-4 border border-line ${candidate.status === "rejected" ? "opacity-60" : ""}`}
                   >
-                    <div className="flex justify-between items-start">
+                    <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-3">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs text-slate/60">

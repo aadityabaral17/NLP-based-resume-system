@@ -110,10 +110,12 @@ function JobSeekerDashboard() {
   return (
     <div className="min-h-screen bg-mist">
       {/* Navbar */}
-      <nav className="bg-white border-b border-line px-6 py-4 flex justify-between items-center">
+      <nav className="bg-white border-b border-line px-4 sm:px-6 py-3 sm:py-4 flex flex-wrap justify-between items-center gap-3">
         <span className="font-serif text-lg text-ink">ResumeMatch</span>
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-slate">Hello, {user?.name}</span>
+        <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
+          <span className="text-sm text-slate hidden sm:inline">
+            Hello, {user?.name}
+          </span>
           <button
             onClick={() => navigate("/cv/upload")}
             className="text-sm bg-indigo text-white px-4 py-2 rounded-lg hover:bg-indigo-dark transition"
@@ -154,7 +156,7 @@ function JobSeekerDashboard() {
         )}
 
         {/* Stats row */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-8">
           <div className="bg-white rounded-xl p-5 border border-line text-center">
             <p className="font-serif text-3xl text-indigo">{jobs.length}</p>
             <p className="text-sm text-slate mt-1">Available jobs</p>
@@ -239,7 +241,7 @@ function JobSeekerDashboard() {
         )}
 
         {/* Category Filter */}
-        <div className="mb-6 flex items-center gap-3">
+        <div className="mb-6 flex flex-wrap items-center gap-3">
           <label className="text-sm font-medium text-ink">
             Filter by category:
           </label>
@@ -249,7 +251,7 @@ function JobSeekerDashboard() {
               setSelectedCategory(e.target.value);
               setCurrentPage(1);
             }}
-            className="border border-line rounded-lg px-4 py-2 text-sm bg-white text-ink focus:outline-none focus:ring-2 focus:ring-indigo/30 focus:border-indigo min-w-55"
+            className="border border-line rounded-lg px-4 py-2 text-sm bg-white text-ink focus:outline-none focus:ring-2 focus:ring-indigo/30 focus:border-indigo w-full sm:w-55"
           >
             {categories.map((cat) => (
               <option key={cat} value={cat}>
@@ -291,7 +293,7 @@ function JobSeekerDashboard() {
                   key={job.vacancy_id}
                   className="bg-white rounded-xl p-5 border border-line"
                 >
-                  <div className="flex justify-between items-start">
+                  <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-3">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-medium text-ink">{job.title}</p>
@@ -322,7 +324,7 @@ function JobSeekerDashboard() {
                       </p>
                     </div>
 
-                    <div className="ml-4 shrink-0">
+                    <div className="sm:ml-4 shrink-0 flex sm:block">
                       {isApplied(job.vacancy_id) ? (
                         <div className="flex flex-col items-end gap-2">
                           <span className="text-xs bg-success-light text-success px-3 py-2 rounded-lg font-medium">

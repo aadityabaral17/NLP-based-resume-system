@@ -76,9 +76,9 @@ function EditJob() {
 
   return (
     <div className="min-h-screen bg-mist">
-      <nav className="bg-white border-b border-line px-6 py-4 flex justify-between items-center">
+      <nav className="bg-white border-b border-line px-4 sm:px-6 py-3 sm:py-4 flex flex-wrap justify-between items-center gap-3">
         <span className="font-serif text-lg text-ink">ResumeMatch</span>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
           <span className="text-sm text-slate">{user?.name}</span>
           <button
             onClick={() => navigate("/dashboard/organisation")}

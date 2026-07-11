@@ -109,9 +109,9 @@ function Register() {
           <h1 className="font-serif text-2xl text-ink mb-1">
             {step === 1 && "Create your account"}
             {step === 2 && "Verify your email"}
-            {step === 3 && "You\u2019re all set"}
+            {step === 3 && "You're all set"}
           </h1>
-          <p className="text-slate text-sm mb-5">
+          <p className="text-slate text-sm mb-5 wrap-break-word">
             {step === 1 && "Join the platform in a minute"}
             {step === 2 && `Enter the 6-digit code sent to ${formData.email}`}
             {step === 3 && "Redirecting to sign in..."}
@@ -128,7 +128,7 @@ function Register() {
                       : "bg-indigo-light text-slate"
                   }`}
                 >
-                  {step > s ? "\u2713" : s}
+                  {step > s ? "✓" : s}
                 </div>
                 {s < 3 && (
                   <div
@@ -221,7 +221,7 @@ function Register() {
                   name="password"
                   value={formData.password}
                   onChange={handleChange}
-                  placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
+                  placeholder="••••••••"
                   required
                   className={inputClass}
                 />
@@ -234,7 +234,7 @@ function Register() {
                   name="confirmPassword"
                   value={formData.confirmPassword}
                   onChange={handleChange}
-                  placeholder="\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022"
+                  placeholder="••••••••"
                   required
                   className={inputClass}
                 />
@@ -254,7 +254,7 @@ function Register() {
             <form onSubmit={handleVerifyAndRegister} className="space-y-4">
               <div className="bg-indigo-light rounded-xl p-4 text-center mb-2">
                 <p className="text-sm text-indigo-dark">Code sent to</p>
-                <p className="font-semibold text-indigo-dark mt-0.5">
+                <p className="font-semibold text-indigo-dark mt-0.5 break-all">
                   {formData.email}
                 </p>
               </div>
@@ -270,7 +270,7 @@ function Register() {
                   placeholder="000000"
                   maxLength={6}
                   required
-                  className="w-full border border-line rounded-lg px-4 py-3 text-center text-2xl font-bold tracking-[0.4em] text-ink focus:outline-none focus:ring-2 focus:ring-indigo/30 focus:border-indigo transition"
+                  className="w-full border border-line rounded-lg px-4 py-3 text-center text-xl sm:text-2xl font-bold tracking-[0.3em] sm:tracking-[0.4em] text-ink focus:outline-none focus:ring-2 focus:ring-indigo/30 focus:border-indigo transition"
                 />
               </div>
 
@@ -303,7 +303,7 @@ function Register() {
                   }}
                   className="text-sm text-slate/70 hover:text-slate"
                 >
-                  \u2190 Change email
+                  ← Change email
                 </button>
               </div>
             </form>
@@ -312,7 +312,7 @@ function Register() {
           {step === 3 && (
             <div className="text-center py-6">
               <div className="w-14 h-14 bg-success-light rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-2xl text-success">\u2713</span>
+                <span className="text-2xl text-success">✓</span>
               </div>
               <p className="text-success font-semibold">
                 Email verified successfully

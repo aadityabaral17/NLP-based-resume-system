@@ -1,18 +1,21 @@
 import { Routes, Route } from "react-router-dom";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import Landing from "./pages/Landing";
 import JobSeekerDashboard from "./pages/JobSeekerDashboard";
 import OrganisationDashboard from "./pages/OrganisationDashboard";
 import CVUpload from "./pages/CVUpload";
 import PostJob from "./pages/PostJob";
 import EditJob from "./pages/EditJob";
 import ProtectedRoute from "./components/ProtectedRoute";
+import Profile from "./pages/Profile";
+import CandidateProfile from "./pages/CandidateProfile";
 
 function App() {
   return (
     <Routes>
       {/* Public routes */}
-      <Route path="/" element={<Login />} />
+      <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
 
@@ -30,6 +33,14 @@ function App() {
         element={
           <ProtectedRoute allowedRole="user">
             <CVUpload />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/profile"
+        element={
+          <ProtectedRoute allowedRole="user">
+            <Profile />
           </ProtectedRoute>
         }
       />
@@ -56,6 +67,14 @@ function App() {
         element={
           <ProtectedRoute allowedRole="organisation">
             <EditJob />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/candidates/:user_id"
+        element={
+          <ProtectedRoute allowedRole="organisation">
+            <CandidateProfile />
           </ProtectedRoute>
         }
       />

@@ -15,10 +15,35 @@ function OrganisationDashboard() {
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [candidatePage, setCandidatePage] = useState(1);
   const [candidateTotalPages, setCandidateTotalPages] = useState(1);
+  const [threshold, setThreshold] = useState(65);
+  const [showSettings, setShowSettings] = useState(false);
+  const [savingThreshold, setSavingThreshold] = useState(false);
 
   useEffect(() => {
     fetchJobs();
+    fetchSettings();
   }, []);
+
+  const fetchSettings = async () => {
+    try {
+      const res = await api.get("/settings");
+      setThreshold(Math.round(res.data.eligibility_threshold * 100));
+    } catch (err) {
+      console.error("Error fetching settings:", err);
+    }
+  };
+
+  const handleSaveThreshold = async () => {
+    setSavingThreshold(true);
+    try {
+      await api.put("/settings", { eligibility_threshold: threshold / 100 });
+      setShowSettings(false);
+    } catch (err) {
+      console.error("Error saving threshold:", err);
+    } finally {
+      setSavingThreshold(false);
+    }
+  };
 
   const fetchJobs = async () => {
     try {
@@ -99,6 +124,12 @@ function OrganisationDashboard() {
             {user?.name}
           </span>
           <button
+            onClick={() => setShowSettings(!showSettings)}
+            className="text-sm text-slate hover:text-indigo transition"
+          >
+            ⚙ Settings
+          </button>
+          <button
             onClick={() => navigate("/jobs/post")}
             className="text-sm bg-indigo text-white px-4 py-2 rounded-lg hover:bg-indigo-dark transition"
           >
@@ -112,6 +143,48 @@ function OrganisationDashboard() {
           </button>
         </div>
       </nav>
+
+      {showSettings && (
+        <div className="max-w-5xl mx-auto px-4 pt-6">
+          <div className="bg-white rounded-2xl border border-line p-6">
+            <h3 className="font-serif text-lg text-ink mb-2">
+              Eligibility threshold
+            </h3>
+            <p className="text-sm text-slate mb-4">
+              Candidates scoring at or above this threshold are marked eligible
+              and receive an instant email notification.
+            </p>
+            <div className="flex items-center gap-4">
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={threshold}
+                onChange={(e) => setThreshold(Number(e.target.value))}
+                className="flex-1 accent-indigo"
+              />
+              <span className="font-serif text-2xl text-indigo w-16 text-right">
+                {threshold}%
+              </span>
+            </div>
+            <div className="flex gap-3 mt-4">
+              <button
+                onClick={handleSaveThreshold}
+                disabled={savingThreshold}
+                className="text-sm bg-indigo text-white px-4 py-2 rounded-lg hover:bg-indigo-dark transition disabled:opacity-50"
+              >
+                {savingThreshold ? "Saving..." : "Save threshold"}
+              </button>
+              <button
+                onClick={() => setShowSettings(false)}
+                className="text-sm text-slate hover:text-ink px-4 py-2"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-5xl mx-auto px-4 py-8">
         {/* Welcome banner */}
@@ -259,6 +332,11 @@ function OrganisationDashboard() {
                             {candidate.name}
                           </p>
                           <StatusBadge status={candidate.status} />
+                          {candidate.is_eligible && (
+                            <span className="text-xs bg-success-light text-success px-2 py-0.5 rounded-full font-medium">
+                              ✓ Eligible
+                            </span>
+                          )}
                         </div>
                         <p className="text-sm text-slate">{candidate.email}</p>
                         {candidate.missing_skills?.length > 0 && (

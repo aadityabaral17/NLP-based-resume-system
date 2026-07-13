@@ -38,6 +38,8 @@ app.use("/api/jobs", require("./routes/jobs"));
 app.use("/api/match", require("./routes/match"));
 app.use("/api/recommendations", require("./routes/recommendations"));
 app.use("/api/applications", require("./routes/applications"));
+app.use("/api/profile", require("./routes/profile"));
+app.use("/api/settings", require("./routes/settings"));
 
 // Error handling middleware
 app.use((err, req, res, next) => {

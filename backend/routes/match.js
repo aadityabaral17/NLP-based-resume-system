@@ -3,6 +3,10 @@ const router = express.Router();
 const auth = require("../middleware/auth");
 const pool = require("../config/database");
 const axios = require("axios");
+const {
+  sendMatchNotification,
+  sendShortlistNotification,
+} = require("../utils/emailService");
 
 // POST /api/match/trigger
 router.post("/trigger", auth, async (req, res) => {
@@ -273,9 +277,44 @@ router.patch("/candidates/:match_id/status", auth, async (req, res) => {
       [status, match_id],
     );
 
+    const match = result.rows[0];
+
+    // Send email notification if shortlisted
+    if (status === "shortlisted") {
+      try {
+        const detailsQuery = `
+      SELECT u.name, u.email, j.title, o.company_name
+      FROM match_results mr
+      JOIN users u ON mr.user_id = u.user_id
+      JOIN job_vacancies j ON mr.vacancy_id = j.vacancy_id
+      JOIN organisations o ON j.org_id = o.org_id
+      WHERE mr.match_id = $1
+    `;
+        const detailsResult = await pool.query(detailsQuery, [match_id]);
+        const details = detailsResult.rows[0];
+
+        if (details) {
+          await sendShortlistNotification(
+            details.email,
+            details.name,
+            details.title,
+            details.company_name,
+          );
+
+          await pool.query(
+            `INSERT INTO notifications (match_id, recipient_email, status, sent_at)
+            VALUES ($1, $2, 'sent', NOW())`,
+            [match_id, details.email],
+          );
+        }
+      } catch (emailError) {
+        console.error("Shortlist email error:", emailError);
+      }
+    }
+
     res.json({
       message: `Candidate ${status} successfully`,
-      match: result.rows[0],
+      match,
     });
   } catch (error) {
     console.error("Error updating candidate status:", error);

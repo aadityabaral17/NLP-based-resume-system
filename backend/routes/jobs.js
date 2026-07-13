@@ -156,6 +156,107 @@ router.get("/", async (req, res) => {
   }
 });
 
+router.get("/recommended/for-me", auth, async (req, res) => {
+  try {
+    const { id: user_id, user_type } = req.user;
+
+    if (user_type !== "user") {
+      return res.status(403).json({
+        error: {
+          message: "Only job seekers can view recommended jobs",
+          status: 403,
+        },
+      });
+    }
+
+    // Get candidate's latest CV skills and predicted category
+    const cvResult = await pool.query(
+      "SELECT skill_entities, predicted_category FROM cvs WHERE user_id = $1 ORDER BY uploaded_at DESC LIMIT 1",
+      [user_id],
+    );
+
+    if (cvResult.rows.length === 0) {
+      return res.json({
+        jobs: [],
+        count: 0,
+        message: "Upload a CV to get recommendations",
+      });
+    }
+
+    const candidateSkills = (cvResult.rows[0].skill_entities || []).map((s) =>
+      s.toLowerCase(),
+    );
+    const candidateCategory = cvResult.rows[0].predicted_category;
+
+    // Build query — filter by predicted category first to reduce comparison scope
+    let query = `
+      SELECT j.*, o.company_name
+      FROM job_vacancies j
+      JOIN organisations o ON j.org_id = o.org_id
+      WHERE j.deadline >= CURRENT_DATE
+      AND j.vacancy_id NOT IN (
+        SELECT vacancy_id FROM applications WHERE user_id = $1
+      )
+    `;
+    const params = [user_id];
+
+    if (candidateCategory) {
+      params.push(candidateCategory);
+      query += ` AND j.category = $${params.length}`;
+    }
+
+    query += ` ORDER BY j.created_at DESC`;
+
+    const jobsResult = await pool.query(query, params);
+
+    // Compute quick skill-overlap score for ranking within the category
+    const scoredJobs = jobsResult.rows.map((job) => {
+      const requiredSkills = (job.required_skills || []).map((s) =>
+        s.toLowerCase(),
+      );
+      let overlapScore = 0;
+
+      if (requiredSkills.length > 0) {
+        const matched = requiredSkills.filter((s) =>
+          candidateSkills.includes(s),
+        );
+        overlapScore = matched.length / requiredSkills.length;
+      }
+
+      return {
+        vacancy_id: job.vacancy_id,
+        org_id: job.org_id,
+        company_name: job.company_name,
+        title: job.title,
+        description: job.description,
+        required_skills: job.required_skills || [],
+        experience_level: job.experience_level,
+        employment_type: job.employment_type,
+        deadline: job.deadline,
+        category: job.category,
+        created_at: job.created_at,
+        preview_score: overlapScore,
+      };
+    });
+
+    const recommended = scoredJobs
+      .filter((job) => job.preview_score >= 0.6)
+      .sort((a, b) => b.preview_score - a.preview_score)
+      .slice(0, 20);
+
+    res.json({
+      jobs: recommended,
+      count: recommended.length,
+      candidate_category: candidateCategory,
+    });
+  } catch (error) {
+    console.error("Error fetching recommended jobs:", error);
+    res.status(500).json({
+      error: { message: "Error fetching recommended jobs", status: 500 },
+    });
+  }
+});
+
 // GET /api/jobs/:id - fetch single job
 router.get("/:id", async (req, res) => {
   try {

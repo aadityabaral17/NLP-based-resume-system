@@ -76,4 +76,52 @@ const sendMatchNotification = async (
   await transporter.sendMail(mailOptions);
 };
 
-module.exports = { sendMatchNotification };
+const sendShortlistNotification = async (
+  candidateEmail,
+  candidateName,
+  jobTitle,
+  companyName,
+) => {
+  const mailOptions = {
+    from: process.env.SMTP_USER,
+    to: candidateEmail,
+    subject: `You've been shortlisted for ${jobTitle} at ${companyName}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: #B45309; padding: 24px; border-radius: 8px 8px 0 0;">
+          <h1 style="color: white; margin: 0; font-size: 24px;">ResumeMatch AI</h1>
+        </div>
+        <div style="padding: 24px; border: 1px solid #e5e7eb; border-radius: 0 0 8px 8px;">
+          <h2 style="color: #1f2937;">Congratulations, ${candidateName}!</h2>
+          <p style="color: #4b5563;">
+            You've been <strong>shortlisted</strong> for the following position:
+          </p>
+          
+          <div style="background: #FEF3E2; padding: 16px; border-radius: 8px; margin: 16px 0;">
+            <p style="margin: 0;"><strong>Position:</strong> ${jobTitle}</p>
+            <p style="margin: 8px 0 0;"><strong>Company:</strong> ${companyName}</p>
+            <p style="margin: 8px 0 0; color: #B45309; font-weight: bold;">★ Shortlisted</p>
+          </div>
+
+          <p style="color: #4b5563;">
+            The organisation may reach out to you directly for the next steps. 
+            Login to your dashboard to view more details.
+          </p>
+          
+          <a href="http://localhost:5173/dashboard/jobseeker" 
+             style="display: inline-block; background: #3730A9; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; margin-top: 16px;">
+            View Dashboard
+          </a>
+
+          <p style="color: #9ca3af; font-size: 12px; margin-top: 24px;">
+            This email was sent by ResumeMatch AI.
+          </p>
+        </div>
+      </div>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+};
+
+module.exports = { sendMatchNotification, sendShortlistNotification };

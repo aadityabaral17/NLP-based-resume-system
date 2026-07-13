@@ -21,22 +21,34 @@ function JobSeekerDashboard() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const jobsPerPage = 10;
+  const [candidateCategory, setCandidateCategory] = useState(null);
+  const [showRecommended, setShowRecommended] = useState(false);
+  const [expandedJobId, setExpandedJobId] = useState(null);
+  const [hasCV, setHasCV] = useState(true);
 
   const categories = ["All", ...jobCategories];
 
   useEffect(() => {
     fetchData();
-  }, [selectedCategory, currentPage]);
+  }, [selectedCategory, currentPage, showRecommended]);
 
   const fetchData = async () => {
     try {
-      const categoryParam =
-        selectedCategory !== "All" ? `&category=${selectedCategory}` : "";
-      const jobsRes = await api.get(
-        `/jobs?page=${currentPage}&limit=${jobsPerPage}${categoryParam}`,
-      );
-      setJobs(jobsRes.data.jobs || []);
-      setTotalPages(jobsRes.data.totalPages || 1);
+      let jobsRes;
+      if (showRecommended) {
+        jobsRes = await api.get("/jobs/recommended/for-me");
+        setJobs(jobsRes.data.jobs || []);
+        setCandidateCategory(jobsRes.data.candidate_category || null);
+        setTotalPages(1);
+      } else {
+        const categoryParam =
+          selectedCategory !== "All" ? `&category=${selectedCategory}` : "";
+        jobsRes = await api.get(
+          `/jobs?page=${currentPage}&limit=${jobsPerPage}${categoryParam}`,
+        );
+        setJobs(jobsRes.data.jobs || []);
+        setTotalPages(jobsRes.data.totalPages || 1);
+      }
 
       const matchRes = await api.get("/match/user");
       setMatches(matchRes.data.matches || []);
@@ -46,11 +58,21 @@ function JobSeekerDashboard() {
 
       const recRes = await api.get(`/recommendations/${user?.id}`);
       setRecommendations(recRes.data.recommendations);
+      try {
+        const profileRes = await api.get("/profile");
+        setHasCV(!!profileRes.data.cv);
+      } catch (err) {
+        setHasCV(true); // fail silently, don't block dashboard
+      }
     } catch (err) {
       console.error("Error fetching data:", err);
     } finally {
       setLoading(false);
     }
+  };
+
+  const toggleJobDescription = (vacancy_id) => {
+    setExpandedJobId(expandedJobId === vacancy_id ? null : vacancy_id);
   };
 
   const handleApply = async (vacancy_id) => {
@@ -117,10 +139,10 @@ function JobSeekerDashboard() {
             Hello, {user?.name}
           </span>
           <button
-            onClick={() => navigate("/cv/upload")}
-            className="text-sm bg-indigo text-white px-4 py-2 rounded-lg hover:bg-indigo-dark transition"
+            onClick={() => navigate("/profile")}
+            className="text-sm text-slate hover:text-indigo transition"
           >
-            Upload CV
+            My Profile
           </button>
           <button
             onClick={handleLogout}
@@ -141,6 +163,26 @@ function JobSeekerDashboard() {
               : "Browse jobs below and apply to get matched"}
           </p>
         </div>
+
+        {/* CV upload nudge */}
+        {!hasCV && (
+          <div className="bg-amber-light border border-amber/30 rounded-2xl p-5 mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <p className="font-medium text-amber">
+                Upload your CV to get started
+              </p>
+              <p className="text-sm text-amber/80 mt-1">
+                We'll extract your skills and match you against open roles
+              </p>
+            </div>
+            <button
+              onClick={() => navigate("/cv/upload")}
+              className="text-sm bg-amber text-white px-4 py-2 rounded-lg hover:opacity-90 transition shrink-0"
+            >
+              Upload CV
+            </button>
+          </div>
+        )}
 
         {/* Message banner */}
         {message && (
@@ -187,7 +229,7 @@ function JobSeekerDashboard() {
                   key={app.application_id}
                   className="bg-white rounded-xl p-5 border border-line"
                 >
-                  <div className="flex justify-between items-start">
+                  <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-3">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <p className="font-medium text-ink">{app.title}</p>
@@ -212,6 +254,22 @@ function JobSeekerDashboard() {
                               Missing: {skill}
                             </span>
                           ))}
+                          <button
+                            onClick={() => toggleJobDescription(app.vacancy_id)}
+                            className="text-xs text-indigo hover:underline mt-2"
+                          >
+                            {expandedJobId === app.vacancy_id
+                              ? "Hide description ▲"
+                              : "View full description ▼"}
+                          </button>
+
+                          {expandedJobId === app.vacancy_id && (
+                            <div className="bg-mist rounded-lg p-4 mt-2">
+                              <p className="text-sm text-ink whitespace-pre-wrap">
+                                {app.description}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -240,51 +298,86 @@ function JobSeekerDashboard() {
           </div>
         )}
 
-        {/* Category Filter */}
+        {/* Category & Recommended Filter */}
         <div className="mb-6 flex flex-wrap items-center gap-3">
-          <label className="text-sm font-medium text-ink">
-            Filter by category:
-          </label>
-          <select
-            value={selectedCategory}
-            onChange={(e) => {
-              setSelectedCategory(e.target.value);
+          <button
+            onClick={() => {
+              setShowRecommended(!showRecommended);
               setCurrentPage(1);
             }}
-            className="border border-line rounded-lg px-4 py-2 text-sm bg-white text-ink focus:outline-none focus:ring-2 focus:ring-indigo/30 focus:border-indigo w-full sm:w-55"
+            className={`text-sm px-4 py-2 rounded-lg border transition font-medium ${
+              showRecommended
+                ? "bg-amber text-white border-amber"
+                : "bg-white text-amber border-amber/40 hover:bg-amber-light"
+            }`}
           >
-            {categories.map((cat) => (
-              <option key={cat} value={cat}>
-                {cat}
-              </option>
-            ))}
-          </select>
-          {selectedCategory !== "All" && (
-            <button
-              onClick={() => {
-                setSelectedCategory("All");
-                setCurrentPage(1);
-              }}
-              className="text-xs text-indigo hover:underline"
-            >
-              Clear filter
-            </button>
+            ✨ Recommended for you
+          </button>
+
+          {!showRecommended && (
+            <>
+              <label className="text-sm font-medium text-ink">
+                Filter by category:
+              </label>
+              <select
+                value={selectedCategory}
+                onChange={(e) => {
+                  setSelectedCategory(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="border border-line rounded-lg px-4 py-2 text-sm bg-white text-ink focus:outline-none focus:ring-2 focus:ring-indigo/30 focus:border-indigo w-full sm:w-55"
+              >
+                {categories.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+              {selectedCategory !== "All" && (
+                <button
+                  onClick={() => {
+                    setSelectedCategory("All");
+                    setCurrentPage(1);
+                  }}
+                  className="text-xs text-indigo hover:underline"
+                >
+                  Clear filter
+                </button>
+              )}
+            </>
           )}
         </div>
 
         {/* All Available Jobs */}
         <div>
-          <h3 className="font-serif text-lg text-ink mb-4">
-            Available jobs
-            {selectedCategory !== "All" && (
-              <span className="ml-2 text-sm text-indigo font-sans font-normal">
-                · {selectedCategory}
-              </span>
+          <div className="mb-4">
+            <h3 className="font-serif text-lg text-ink">
+              {showRecommended ? "Recommended jobs for you" : "Available jobs"}
+              {showRecommended && candidateCategory && (
+                <span className="ml-2 text-sm text-amber font-sans font-normal">
+                  · Based on your {candidateCategory} profile
+                </span>
+              )}
+              {!showRecommended && selectedCategory !== "All" && (
+                <span className="ml-2 text-sm text-indigo font-sans font-normal">
+                  · {selectedCategory}
+                </span>
+              )}
+            </h3>
+            {showRecommended && (
+              <p className="text-xs text-slate/70 mt-1">
+                Curated based on your profile. Apply to see your full match
+                score.
+              </p>
             )}
-          </h3>
+          </div>
           {jobs.length === 0 ? (
             <div className="bg-white rounded-xl p-8 text-center border border-line">
-              <p className="text-slate">No jobs found in this category</p>
+              <p className="text-slate">
+                {showRecommended
+                  ? "No recommended jobs found. Try uploading or updating your CV."
+                  : "No jobs found in this category"}
+              </p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -322,6 +415,23 @@ function JobSeekerDashboard() {
                       <p className="text-xs text-slate/70 mt-2">
                         Deadline: {new Date(job.deadline).toLocaleDateString()}
                       </p>
+
+                      <button
+                        onClick={() => toggleJobDescription(job.vacancy_id)}
+                        className="text-xs text-indigo hover:underline mt-2"
+                      >
+                        {expandedJobId === job.vacancy_id
+                          ? "Hide description ▲"
+                          : "View full description ▼"}
+                      </button>
+
+                      {expandedJobId === job.vacancy_id && (
+                        <div className="bg-mist rounded-lg p-4 mt-2">
+                          <p className="text-sm text-ink whitespace-pre-wrap">
+                            {job.description}
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                     <div className="sm:ml-4 shrink-0 flex sm:block">
@@ -360,7 +470,7 @@ function JobSeekerDashboard() {
             </div>
           )}
 
-          {totalPages > 1 && (
+          {!showRecommended && totalPages > 1 && (
             <div className="flex justify-center items-center gap-2 mt-6">
               <button
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}

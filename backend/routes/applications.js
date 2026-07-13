@@ -19,10 +19,10 @@ router.post("/:vacancy_id", auth, async (req, res) => {
 
     // Check job exists and deadline not passed
     const jobResult = await pool.query(
-      `SELECT j.*, o.company_name 
-       FROM job_vacancies j
-       JOIN organisations o ON j.org_id = o.org_id
-       WHERE j.vacancy_id = $1 AND j.deadline >= CURRENT_DATE`,
+      `SELECT j.*, o.company_name, o.eligibility_threshold 
+      FROM job_vacancies j
+      JOIN organisations o ON j.org_id = o.org_id
+      WHERE j.vacancy_id = $1 AND j.deadline >= CURRENT_DATE`,
       [vacancy_id],
     );
 
@@ -81,31 +81,33 @@ router.post("/:vacancy_id", auth, async (req, res) => {
     });
 
     const matchResult = matchResponse.data;
+    const orgThreshold = job.eligibility_threshold ?? 0.65;
+    const isEligible = matchResult.final_score >= orgThreshold;
 
     // Save match result
     const savedMatch = await pool.query(
       `INSERT INTO match_results 
-       (user_id, vacancy_id, cosine_score, composite_score, missing_skills, is_eligible)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (user_id, vacancy_id) 
-       DO UPDATE SET 
-         cosine_score = EXCLUDED.cosine_score,
-         composite_score = EXCLUDED.composite_score,
-         missing_skills = EXCLUDED.missing_skills,
-         is_eligible = EXCLUDED.is_eligible
-       RETURNING match_id`,
+      (user_id, vacancy_id, cosine_score, composite_score, missing_skills, is_eligible)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (user_id, vacancy_id) 
+      DO UPDATE SET 
+        cosine_score = EXCLUDED.cosine_score,
+        composite_score = EXCLUDED.composite_score,   
+        missing_skills = EXCLUDED.missing_skills,
+        is_eligible = EXCLUDED.is_eligible
+      RETURNING match_id`,
       [
         user_id,
         vacancy_id,
         matchResult.cosine_similarity,
         matchResult.final_score,
         matchResult.missing_skills,
-        matchResult.is_eligible,
+        isEligible,
       ],
     );
 
     // Send email if eligible
-    if (matchResult.is_eligible) {
+    if (isEligible) {
       try {
         const userResult = await pool.query(
           "SELECT name, email FROM users WHERE user_id = $1",

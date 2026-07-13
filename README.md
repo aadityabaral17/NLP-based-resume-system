@@ -1,294 +1,77 @@
-# NLP Based Resume Screening and Job Recommendation System
+## Feature: Organisation Threshold, Profiles, Recommendations, Landing Page
 
-Pokhara University — Bachelor of Computer Engineering — May 2026
+### What's included
+- Configurable eligibility threshold per organisation (Settings panel)
+- Automatic recalculation of `is_eligible` when threshold changes
+- Automatic recalculation of match scores when a job seeker updates their CV
+- Email notification when a candidate is manually shortlisted (in addition to auto-eligible emails)
+- Job seeker profile page — editable phone, location, bio, LinkedIn/GitHub/portfolio links, CV viewer
+- Organisation can view a candidate's full profile (only for candidates who applied to their jobs)
+- "Recommended for you" filter for job seekers — shows jobs matching their CV's predicted category with ≥70% skill overlap
+- Public landing page at `/` with project overview, sign in / sign up CTAs, and academic project disclaimer
 
-## Team
-| Name | Role | Branch |
-|------|------|--------|
-| Ayush Khanal | Frontend + Database | feat/ayush |
-| Nischal Bhandari | Backend (Node.js/Express) | feat/nischal-nlp |
-| Aaditya Baral | NLP/ML (Python) | feat/aaditya |
-| Samyog Sapkota | DevOps + Testing | feat/samyog |
+### Requirements
 
----
+**Database migrations (run in Supabase SQL Editor before pulling this branch):**
+```sql
+-- Organisation configurable threshold
+ALTER TABLE organisations 
+ADD COLUMN eligibility_threshold FLOAT DEFAULT 0.65;
 
-## System Architecture
-Frontend (React, port 5173)
+-- Job seeker profile fields
+ALTER TABLE users 
+ADD COLUMN phone VARCHAR(20),
+ADD COLUMN location VARCHAR(150),
+ADD COLUMN bio TEXT,
+ADD COLUMN linkedin_url VARCHAR(255),
+ADD COLUMN github_url VARCHAR(255),
+ADD COLUMN portfolio_url VARCHAR(255);
 
-↓
-
-Backend (Node.js/Express, port 3000)
-
-↓
-
-NLP Service (Python/FastAPI, port 8000)
-
-↓
-
-Database (Supabase PostgreSQL)
-
-Three servers run simultaneously on your machine, all connecting to one shared Supabase database.
-
----
-
-## Current Progress
-- [x] User registration (job seeker + organisation)
-- [x] Login with JWT authentication
-- [x] Protected routes based on user role
-- [x] CV upload with NLP parsing (PDF/DOCX)
-- [x] Section extraction (skills, projects, experience, summary)
-- [x] SVM resume classifier (73% accuracy, 24 categories)
-- [x] Sentence Transformer semantic matching
-- [x] Skill gap analysis
-- [x] Job posting with auto-matching
-- [x] Email notifications (match score ≥ 65%)
-- [x] Job seeker dashboard with match scores
-- [x] Organisation dashboard with ranked candidates
-- [x] Career recommendations panel
-- [ ] CSV export for shortlist
-- [ ] UI/UX polish
-
----
-
-## Prerequisites
-
-Install these before starting:
-
-| Tool | Download Link | Check Version |
-|------|---------------|----------------|
-| Node.js 20+ | https://nodejs.org | `node --version` |
-| Python 3.11+ | https://python.org | `python --version` |
-| Git | https://git-scm.com | `git --version` |
-| GitHub CLI | https://cli.github.com | `gh --version` |
-
----
-
-## Step 1 — Clone the Repository
-
-```bash
-gh auth login
-cd Desktop
-git clone https://github.com/khanalayush619/NLP-based-resume-system.git
-cd NLP-based-resume-system
-git checkout dev
-git pull origin dev
+-- Predicted category storage for recommended jobs matching
+ALTER TABLE cvs 
+ADD COLUMN predicted_category VARCHAR(100);
 ```
 
-Create your own branch:
-```bash
-git checkout -b feat/yourname
-git push origin feat/yourname
+### Backend Routes Updates
+
+| File                          | Route(s)                                      | Type     | Description                                                                 |
+|-------------------------------|-----------------------------------------------|----------|-----------------------------------------------------------------------------|
+| backend/routes/settings.js    | GET /api/settings<br>PUT /api/settings        | New      | Manage application settings (fetch and update).                             |
+| backend/routes/profile.js     | GET /api/profile<br>PUT /api/profile<br>GET /api/profile/:user_id | New      | User profile management (self and by user ID).                              |
+| backend/routes/jobs.js        | GET /api/jobs/recommended/for-me              | Updated  | Recommendation endpoint refined for personalized job listings.              |
+| backend/routes/applications.js| —                                             | Updated  | Uses organization threshold instead of hardcoded 0.65 for application logic.|
+| backend/routes/match.js       | —                                             | Updated  | Shortlist status now triggers email notification.                           |
+| backend/routes/cv.js          | —                                             | Updated  | Saves `predicted_category` and recalculates match scores for applied jobs.  |
+| backend/utils/emailService.js | —                                             | Updated  | Adds `sendShortlistNotification()` for shortlist email alerts.              |
+
+
+Register in `backend/server.js`:
+```javascript
+app.use("/api/settings", require("./routes/settings"));
+app.use("/api/profile", require("./routes/profile"));
 ```
 
----
-
-## Step 2 — Database Setup (Shared Supabase)
-
-This project uses a **shared Supabase database** — no local PostgreSQL needed.
-
-Ask Ayush for the `DATABASE_URL` connection string (sent privately via WhatsApp, never committed to GitHub) or you can use your own.
-
----
-
-## Step 3 — Backend Setup
-
-```bash
-cd backend
-npm install
-```
-
-Create a file `backend/.env`:
-
-```dotenv
-PORT=3000
-DATABASE_URL=postgresql://postgres.xxxxx:PASSWORD@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres
-JWT_SECRET=nlp_resume_system_secret_key_2026
-JWT_EXPIRES_IN=24h
-PYTHON_SERVICE_URL=http://localhost:8000
-SMTP_USER=yourprojectemail@gmail.com
-SMTP_PASS=your_gmail_app_password
-```
-
-Ask Ayush for the actual `DATABASE_URL`, `SMTP_USER`, and `SMTP_PASS` values or use your own email for individual testing.
-
-Run:
-```bash
-npm run dev
-```
-
-Should show:
-Server running on port 3000
-
----
-
-## Step 4 — NLP Service Setup
-
-```bash
-cd nlp-service
-pip install -r requirements.txt --break-system-packages
-python -m spacy download en_core_web_sm
-```
-
-Make sure these files exist (already in repo):
-nlp-service/model.pkl
-
-nlp-service/vectorizer.pkl
-
-nlp-service/label_encoder.pkl
-
-Run:
-```bash
-python -m uvicorn main:app --reload --port 8000
-```
-
-Should show:
-Uvicorn running on http://127.0.0.1:8000
-
-Verify at: http://localhost:8000/health
-```json
-{"status": "ok", "model": "sentence-transformers + SVM"}
-```
-
----
-
-## Step 5 — Frontend Setup
-
-```bash
-cd frontend
-npm install
-```
-
-Create a file `frontend/.env`:
-
-```dotenv
-VITE_API_URL=http://localhost:3000/api
-```
-
-Run:
-```bash
-npm run dev
-```
-
-Should show:
-Local: http://localhost:5173/
-
----
-
-## Step 6 — Run the Full System
-
-Open **3 separate terminals** in VS Code:
-
-```bash
-# Terminal 1 — Backend
-cd backend
-npm run dev
-
-# Terminal 2 — Frontend  
-cd frontend
-npm run dev
-
-# Terminal 3 — NLP Service
-cd nlp-service
-python -m uvicorn main:app --reload --port 8000
-```
-
-Open browser: http://localhost:5173
-
----
-
-## Test Accounts
-If you are using your own database then u have to manually add test accounts else u can use the list below.
-
-| Email | Password | Role |
-|-------|----------|------|
-| ram@test.com | test123456 | Job Seeker |
-| sita@test.com | test123456 | Job Seeker |
-| hari@test.com | test123456 | Job Seeker |
-| technepal@test.com | test123456 | Organisation |
-| himalayan@test.com | test123456 | Organisation |
-
----
-
-## Testing the Full Flow
-
-**As Job Seeker:**
-1. Login with `ram@test.com`
-2. Click **Upload CV** → upload a PDF or DOCX resume
-3. Dashboard shows extracted skills and CV category
-
-**As Organisation:**
-1. Login with `technepal@test.com`
-2. Click **Post a Job** → fill form with a detailed job description
-3. System automatically matches against all uploaded CVs
-4. Eligible candidates (score ≥ 65%) appear in ranked list
-5. Eligible job seekers receive an email notification
-
-**Check match scores:**
-- Job seeker dashboard shows match percentage and missing skills
-- Organisation dashboard shows ranked candidates list
-
----
-
-## Branch Strategy
-main     ← stable, demo-ready code only
-
-dev      ← shared integration branch
-
-feat/*   ← individual feature branches
-
-Rules:
-- Always branch off `dev`, never `main`
-- Open a Pull Request into `dev` when a feature is done
-- Only Ayush merges `dev` into `main` at milestones
-- Never push `node_modules`, `.env`, or uploaded files to GitHub
-
----
-
-## Troubleshooting
-
-**Backend won't start:**
-- Check `backend/.env` exists with correct `DATABASE_URL`
-- Run `npm install` again
-
-**NLP service crashes:**
-- Make sure `model.pkl`, `vectorizer.pkl`, `label_encoder.pkl` exist in `nlp-service/`
-- Run `python -m spacy download en_core_web_sm`
-
-**Frontend shows network error:**
-- Check backend is running on port 3000
-- Check `frontend/.env` has correct `VITE_API_URL`
-
-**CV upload fails:**
-- Make sure NLP service is running on port 8000
-- Check `backend/.env` has `PYTHON_SERVICE_URL=http://localhost:8000`
-
-**No email received:**
-- Check Gmail App Password is correct in `backend/.env`
-- Check spam folder
-- Match score must be ≥ 65% to trigger email
-
----
-
-## Project Structure
-NLP-based-resume-system/
-
-frontend/        ← React application (Vite + Tailwind)
-
-backend/         ← Node.js/Express REST API
-
-nlp-service/     ← Python FastAPI NLP microservice
-
-database/        ← SQL schema and helper functions
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React 18, Vite, Tailwind CSS, Axios |
-| Backend | Node.js, Express.js, JWT, bcrypt, Nodemailer |
-| NLP Service | Python, FastAPI, spaCy, scikit-learn, sentence-transformers |
-| Database | PostgreSQL (Supabase, shared) |
-
----
+### Frontend Pages Updates
+
+| File                                      | Path / Route(s)                          | Type     | Description                                                                 |
+|-------------------------------------------|------------------------------------------|----------|-----------------------------------------------------------------------------|
+| frontend/src/pages/Profile.jsx            | /profile                                 | New      | Job seeker profile page.                                                    |
+| frontend/src/pages/CandidateProfile.jsx   | /candidates/:user_id                     | New      | Organisation’s view of a candidate profile.                                 |
+| frontend/src/pages/Landing.jsx            | /                                        | New      | Public homepage rendered at root path.                                      |
+| frontend/src/pages/JobSeekerDashboard.jsx | /jobseeker-dashboard (internal routing)  | Updated  | Added recommended filter and CV upload nudge.                               |
+| frontend/src/pages/OrganisationDashboard.jsx | /organisation-dashboard (internal routing) | Updated  | Added settings panel and eligible badge.                                    |
+| frontend/src/App.jsx                      | /, /profile, /candidates/:user_id        | Updated  | Root path now renders Landing; new routes for Profile and CandidateProfile. |
+
+**No new npm/pip packages required** — this feature set uses only existing dependencies.
+
+### Testing checklist
+- [ ] Organisation can open Settings and change eligibility threshold
+- [ ] Changing threshold updates is_eligible on existing match_results immediately
+- [ ] Re-uploading a CV recalculates scores for all jobs already applied to
+- [ ] Manually shortlisting a candidate sends them an email
+- [ ] Job seeker can edit and save their profile
+- [ ] Job seeker can view their own CV file from Profile page
+- [ ] Organisation can click a candidate's name to view their full profile + CV
+- [ ] Organisation cannot view a profile of someone who hasn't applied to their jobs (403)
+- [ ] "Recommended for you" only shows jobs in the candidate's predicted category, ≥60% skill overlap
+- [ ] Landing page loads at "/" with disclaimer banner, Sign in / Get started buttons

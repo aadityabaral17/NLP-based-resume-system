@@ -1,2 +1,8 @@
 model.pkl
 vectorizer.pkl
+# BERT training artifacts (regenerate via download_dataset.py + train_bert.py)
+bert_resume_model/
+bert_checkpoints/
+bert_logs/
+data/ResumeAtlas.csv
+bert_label_encoder.pkl

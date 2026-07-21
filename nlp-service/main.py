@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Form
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -9,6 +9,100 @@ import spacy
 import io
 import re
 import numpy as np
+import requests
+
+def generate_career_tips(category: str, cv_skills: list, missing_skills: list, top_matches: list) -> list:
+    """Generate personalized career tips using a local LLM via Ollama."""
+    skills_summary = ", ".join(cv_skills[:15]) if cv_skills else "not specified"
+    missing_summary = ", ".join(missing_skills[:8]) if missing_skills else "none identified"
+    matches_summary = ", ".join([m["job_title"] for m in top_matches[:3]]) if top_matches else "none yet"
+
+    prompt = f"""You are a career advisor reviewing a specific candidate's resume.
+
+Candidate's resume category: {category}
+Candidate's actual skills from their CV: {skills_summary}
+Skills frequently missing when applying to jobs: {missing_summary}
+Candidate's top matching job titles so far: {matches_summary}
+
+Write exactly 3 career tips SPECIFIC to this candidate's actual skills and category above — do not give generic industry advice unrelated to their listed skills. Each tip must have a title and 2-3 short bullet points (each bullet under 20 words).
+
+Respond in EXACTLY this format, nothing else, no intro sentence, no extra commentary:
+
+TIP1_TITLE: Skill Development
+TIP1_BULLET1: <bullet text>
+TIP1_BULLET2: <bullet text>
+TIP1_BULLET3: <bullet text>
+TIP2_TITLE: Job Search Strategy
+TIP2_BULLET1: <bullet text>
+TIP2_BULLET2: <bullet text>
+TIP2_BULLET3: <bullet text>
+TIP3_TITLE: Career Growth
+TIP3_BULLET1: <bullet text>
+TIP3_BULLET2: <bullet text>
+TIP3_BULLET3: <bullet text>"""
+
+    try:
+        response = requests.post(
+            "http://localhost:11434/api/generate",
+            json={
+                "model": "llama3.2:3b",
+                "prompt": prompt,
+                "stream": False
+            },
+            timeout=30
+        )
+        text = response.json().get("response", "")
+
+        tips = []
+        for tip_num in [1, 2, 3]:
+            title_match = re.search(rf"TIP{tip_num}_TITLE:\s*(.+)", text)
+            bullets = []
+            for bullet_num in [1, 2, 3]:
+                bullet_match = re.search(rf"TIP{tip_num}_BULLET{bullet_num}:\s*(.+)", text)
+                if bullet_match:
+                    bullet_text = bullet_match.group(1).strip()
+                    # Stop at next TIP marker if regex over-captured
+                    bullet_text = re.split(r"\s*TIP\d_", bullet_text)[0].strip()
+                    if bullet_text:
+                        bullets.append(bullet_text)
+
+            if title_match and bullets:
+                tips.append({
+                    "title": title_match.group(1).strip(),
+                    "bullets": bullets
+                })
+
+        if len(tips) == 3:
+            return tips
+
+        # Fallback if parsing failed to find all 3 tips
+        raise ValueError("Could not parse 3 tips from LLM response")
+
+    except Exception as e:
+        print(f"LLM generation error: {e}")
+        return [
+            {
+                "title": "Skill Development",
+                "bullets": [
+                    f"Strengthen these missing skills: {missing_summary}",
+                    f"Build small projects using your existing skills: {skills_summary}",
+                ]
+            },
+            {
+                "title": "Job Search Strategy",
+                "bullets": [
+                    f"Target roles similar to: {matches_summary}",
+                    "Highlight your strongest matching skills at the top of your CV",
+                ]
+            },
+            {
+                "title": "Career Growth",
+                "bullets": [
+                    "Set a 3-month goal to close your top missing skill gap",
+                    "Follow companies hiring in your category to track in-demand skills",
+                ]
+            },
+        ]
 
 app = FastAPI()
 
@@ -19,15 +113,29 @@ nlp = spacy.load("en_core_web_sm")
 print("Loading sentence transformer model...")
 sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
 
-print("Loading trained SVM model...")
-with open("model.pkl", "rb") as f:
-    svm_model = pickle.load(f)
-with open("vectorizer.pkl", "rb") as f:
-    tfidf_vectorizer = pickle.load(f)
-with open("label_encoder.pkl", "rb") as f:
-    label_encoder = pickle.load(f)
+print("Loading fine-tuned BERT classifier...")
+import torch
+from transformers import BertTokenizer, BertForSequenceClassification
 
-print("All models loaded successfully!")
+if torch.cuda.is_available():
+    bert_device = "cuda"
+    print(f"BERT using CUDA GPU: {torch.cuda.get_device_name(0)}")
+elif torch.backends.mps.is_available():
+    bert_device = "mps"
+    print("BERT using Apple Silicon MPS")
+else:
+    bert_device = "cpu"
+    print("BERT using CPU")
+
+bert_tokenizer = BertTokenizer.from_pretrained("./bert_resume_model")
+bert_model = BertForSequenceClassification.from_pretrained("./bert_resume_model")
+bert_model.to(bert_device)
+bert_model.eval()
+
+with open("bert_label_encoder.pkl", "rb") as f:
+    bert_label_encoder = pickle.load(f)
+
+print("BERT classifier loaded successfully!")
 
 # ─── Skills list ─────────────────────────────────────
 SKILLS_LIST = [
@@ -47,6 +155,69 @@ SKILLS_LIST = [
     "rest api", "graphql", "microservices", "agile", "scrum",
     "communication", "leadership", "teamwork", "project management"
 ]
+
+# ─── Skill implication map ─────────────────────────────
+# If the CV has the key skill, these implied skills are considered satisfied even if not explicitly mentioned.
+SKILL_IMPLICATIONS = {
+    "react": ["javascript", "html", "css"],
+    "next.js": ["react", "javascript", "html", "css"],
+    "vue": ["javascript", "html", "css"],
+    "angular": ["javascript", "html", "css", "typescript"],
+    "django": ["python"],
+    "flask": ["python"],
+    "fastapi": ["python"],
+    "express": ["node", "javascript"],
+    "node": ["javascript"],
+    "spring": ["java"],
+    "laravel": ["php"],
+    "tensorflow": ["python"],
+    "pytorch": ["python"],
+    "scikit-learn": ["python"],
+    "pandas": ["python"],
+    "numpy": ["python"],
+    "react native": ["react", "javascript"],
+    "tailwind": ["css", "html"],
+    "bootstrap": ["css", "html"],
+}
+
+def expand_implied_skills(skills: list) -> list:
+    """Given a list of explicit skills, add any skills implied by them."""
+    skills_lower = set(normalize_skill(s) for s in skills)
+    expanded = set(skills_lower)
+    for skill in skills_lower:
+        if skill in SKILL_IMPLICATIONS:
+            expanded.update(SKILL_IMPLICATIONS[skill])
+    return list(expanded)
+
+# ─── Skill aliases ──────────────────────────────────────
+# Maps variant spellings to one canonical skill name.
+# Both CV skills and job-required skills get normalized through this before comparison, so "Go", "Golang", "Go Lang" are all treated as the same skill.
+SKILL_ALIASES = {
+    "golang": "go",
+    "go lang": "go",
+    "r programming": "r",
+    "r language": "r",
+    "reactjs": "react",
+    "react.js": "react",
+    "vuejs": "vue",
+    "vue.js": "vue",
+    "nodejs": "node",
+    "node.js": "node",
+    "nextjs": "next.js",
+    "next js": "next.js",
+    "postgres": "postgresql",
+    "mongo": "mongodb",
+    "js": "javascript",
+    "ts": "typescript",
+    "py": "python",
+    "ml": "machine learning",
+    "dl": "deep learning",
+    "cv": "computer vision",
+}
+
+def normalize_skill(skill: str) -> str:
+    skill_lower = skill.lower().strip()
+    return SKILL_ALIASES.get(skill_lower, skill_lower)
 
 # ─── Section headers ──────────────────────────────────
 SECTION_HEADERS = {
@@ -71,6 +242,27 @@ SECTION_HEADERS = {
         "about", "introduction", "overview"
     ]
 }
+
+# ─── Category-aware section weighting ─────────────────
+TECHNICAL_CATEGORIES = {
+    "Information Technology", "Data Science", "DevOps", "Database",
+    "Java Developer", "Python Developer", "React Developer",
+    "DotNet Developer", "ETL Developer", "SQL Developer",
+    "SAP Developer", "Network Security Engineer", "Testing",
+    "Web Designing", "Designing", "Digital Media", "Blockchain",
+    "Civil Engineer", "Electrical Engineering", "Mechanical Engineer",
+    "Architecture", "Business Analyst"
+}
+
+def get_section_weights(predicted_category: str) -> dict:
+    """Technical/project-based categories weight Projects highest.
+    Experience-based professions (Teacher, Advocate, Agriculture, etc.)
+    weight Experience highest instead, since they rarely have a
+    'Projects' section in the conventional sense."""
+    if predicted_category in TECHNICAL_CATEGORIES:
+        return {"skills": 0.25, "projects": 0.40, "experience": 0.20, "summary": 0.15}
+    else:
+        return {"skills": 0.25, "projects": 0.10, "experience": 0.40, "summary": 0.25}
 
 # ─── Helper functions ─────────────────────────────────
 def extract_text_from_file(contents: bytes, filename: str) -> str:
@@ -106,7 +298,17 @@ def clean_text(text: str) -> str:
 
 def extract_skills(text: str) -> list:
     text_lower = text.lower()
-    return [skill for skill in SKILLS_LIST if skill in text_lower]
+    found = []
+    for skill in SKILLS_LIST:
+        pattern = r'\b' + re.escape(skill) + r'\b'
+        if re.search(pattern, text_lower):
+            found.append(skill)
+    # Also catch alias variants not in SKILLS_LIST directly (e.g. "golang")
+    for alias, canonical in SKILL_ALIASES.items():
+        pattern = r'\b' + re.escape(alias) + r'\b'
+        if re.search(pattern, text_lower) and canonical not in found:
+            found.append(canonical)
+    return found
 
 def extract_entities(text: str) -> dict:
     doc = nlp(text)
@@ -128,10 +330,21 @@ def extract_entities(text: str) -> dict:
     return entities
 
 def classify_resume(text: str) -> str:
-    cleaned = clean_text(text)
-    vector = tfidf_vectorizer.transform([cleaned])
-    prediction = svm_model.predict(vector)
-    category = label_encoder.inverse_transform(prediction)[0]
+    encoded = bert_tokenizer(
+        text,
+        truncation=True,
+        padding="max_length",
+        max_length=256,
+        return_tensors="pt"
+    )
+    input_ids = encoded["input_ids"].to(bert_device)
+    attention_mask = encoded["attention_mask"].to(bert_device)
+
+    with torch.no_grad():
+        outputs = bert_model(input_ids=input_ids, attention_mask=attention_mask)
+
+    predicted_id = outputs.logits.argmax(dim=1).cpu().numpy()
+    category = bert_label_encoder.inverse_transform(predicted_id)[0]
     return category
 
 def extract_sections(text: str) -> dict:
@@ -170,7 +383,7 @@ def semantic_similarity(text1: str, text2: str) -> float:
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "model": "sentence-transformers + SVM"}
+    return {"status": "ok", "model": "sentence-transformers + fine-tuned BERT"}
 
 @app.post("/api/parse/cv")
 async def parse_resume(file: UploadFile = File(...)):
@@ -221,6 +434,10 @@ async def match_cv_job(data: dict):
     cv_skills        = data.get("skills", [])
     required_skills  = data.get("required_skills", [])
 
+    # Classify CV first to determine section weighting profile
+    cv_category = classify_resume(cv_text)
+    weights = get_section_weights(cv_category)
+
     # Extract CV sections
     sections = extract_sections(cv_text)
 
@@ -231,21 +448,21 @@ async def match_cv_job(data: dict):
     summary_sim  = semantic_similarity(sections["summary"],  job_description)
     full_sim     = semantic_similarity(cv_text,              job_description)
 
-    # Weighted section score (projects weighted highest)
+    # Category-aware weighted section score
     section_score = (
-        skills_sim   * 0.25 +
-        projects_sim * 0.40 +
-        exp_sim      * 0.20 +
-        summary_sim  * 0.15
+        skills_sim   * weights["skills"] +
+        projects_sim * weights["projects"] +
+        exp_sim      * weights["experience"] +
+        summary_sim  * weights["summary"]
     )
 
     # Fall back to full similarity if sections not detected
     if section_score < 0.01:
         section_score = full_sim
 
-    # Skill overlap
-    cv_skills_lower       = [s.lower() for s in cv_skills]
-    required_skills_lower = [s.lower() for s in required_skills]
+    # Skill overlap — normalize aliases, then expand implied prerequisites
+    cv_skills_lower       = expand_implied_skills(cv_skills)
+    required_skills_lower = [normalize_skill(s) for s in required_skills]
 
     if required_skills_lower:
         matched        = [s for s in required_skills_lower if s in cv_skills_lower]
@@ -259,9 +476,6 @@ async def match_cv_job(data: dict):
     # Final composite score
     composite_score = (section_score * 0.40) + (skill_overlap * 0.60)
     is_eligible     = composite_score >= 0.65
-
-    # Classify CV
-    cv_category = classify_resume(cv_text)
 
     return {
         "cosine_similarity": float(full_sim),
@@ -278,3 +492,83 @@ async def match_cv_job(data: dict):
         "is_eligible":     bool(is_eligible),
         "cv_category":     cv_category
     }
+    
+@app.post("/api/match/batch")
+async def match_batch(files: list[UploadFile] = File(...), job_description: str = Form(...)):
+    results = []
+
+    for file in files:
+        try:
+            contents = await file.read()
+            if not (file.filename.endswith(".pdf") or file.filename.endswith(".docx")):
+                results.append({
+                    "filename": file.filename,
+                    "error": "Unsupported file type"
+                })
+                continue
+
+            raw_text = extract_text_from_file(contents, file.filename)
+            skills = extract_skills(raw_text)
+            category = classify_resume(raw_text)
+            weights = get_section_weights(category)
+            sections = extract_sections(raw_text)
+
+            skills_sim = semantic_similarity(sections["skills"], job_description)
+            projects_sim = semantic_similarity(sections["projects"], job_description)
+            exp_sim = semantic_similarity(sections["experience"], job_description)
+            summary_sim = semantic_similarity(sections["summary"], job_description)
+            full_sim = semantic_similarity(raw_text, job_description)
+
+            section_score = (
+                skills_sim * weights["skills"] +
+                projects_sim * weights["projects"] +
+                exp_sim * weights["experience"] +
+                summary_sim * weights["summary"]
+            )
+            if section_score < 0.01:
+                section_score = full_sim
+
+            required_skills = extract_skills(job_description)
+            cv_skills_lower = expand_implied_skills(skills)
+            required_skills_lower = [normalize_skill(s) for s in required_skills]
+
+            if required_skills_lower:
+                matched = [s for s in required_skills_lower if s in cv_skills_lower]
+                skill_overlap = len(matched) / len(required_skills_lower)
+                missing_skills = [s for s in required_skills_lower if s not in cv_skills_lower]
+            else:
+                skill_overlap = 1.0
+                missing_skills = []
+
+            composite_score = (section_score * 0.40) + (skill_overlap * 0.60)
+
+            results.append({
+                "filename": file.filename,
+                "candidate_name": sections.get("summary", "")[:50] or file.filename,
+                "predicted_category": category,
+                "skills": skills,
+                "missing_skills": missing_skills,
+                "final_score": float(composite_score),
+                "skill_overlap": float(skill_overlap),
+                "section_score": float(section_score),
+            })
+        except Exception as e:
+            results.append({
+                "filename": file.filename,
+                "error": str(e)
+            })
+
+    # Sort by score descending, errors go last
+    results.sort(key=lambda r: r.get("final_score", -1), reverse=True)
+
+    return {"results": results, "count": len(results)}
+
+@app.post("/api/career-tips")
+async def career_tips(data: dict):
+    category = data.get("category", "General")
+    cv_skills = data.get("cv_skills", [])
+    missing_skills = data.get("missing_skills", [])
+    top_matches = data.get("top_matches", [])
+
+    tips = generate_career_tips(category, cv_skills, missing_skills, top_matches)
+    return {"ai_tips": tips}

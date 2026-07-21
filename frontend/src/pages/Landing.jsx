@@ -5,6 +5,16 @@ function Landing() {
 
   return (
     <div className="min-h-screen bg-mist">
+      {/* Project disclaimer */}
+      <div className="bg-amber text-white text-center py-2 px-4">
+        <p className="text-xs">
+          ⚠ This is an academic major project built for demonstration purposes —
+          not a production recruitment platform.
+        </p>
+      </div>
+
+      {/* Navbar */}
+      <nav className="bg-white border-b border-line px-4 sm:px-6 py-4 flex justify-between items-center"></nav>
       {/* Navbar */}
       <nav className="bg-white border-b border-line px-4 sm:px-6 py-4 flex justify-between items-center">
         <div className="flex items-center gap-2">
@@ -89,8 +99,9 @@ function Landing() {
             </div>
             <h3 className="font-medium text-ink mb-2">Get matched</h3>
             <p className="text-sm text-slate">
-              A semantic matching engine scores you against real job
-              descriptions — not just keywords.
+              Section-aware semantic matching — plus a fine-tuned BERT model
+              that understands what role you're suited for, not just which
+              keywords appear.
             </p>
           </div>
 
@@ -99,9 +110,10 @@ function Landing() {
               <span className="text-lg">📧</span>
             </div>
             <h3 className="font-medium text-ink mb-2">Get noticed</h3>
-            <p className="text-sm text-slate">
-              Score above 65% and you're notified instantly — employers see you
-              in their ranked shortlist.
+            <p className="text-slate text-base sm:text-sm max-w-xl mx-auto mb-8">
+              Upload your resume once. Our NLP engine reads your skills,
+              projects, and experience — then matches you to roles that actually
+              fit, and notifies employers when you're a strong match.
             </p>
           </div>
         </div>
@@ -111,19 +123,19 @@ function Landing() {
       <div className="bg-ink text-white py-16">
         <div className="max-w-5xl mx-auto px-4 grid sm:grid-cols-3 gap-8 text-center">
           <div>
-            <p className="font-serif text-3xl mb-1">NLP</p>
+            <p className="font-serif text-3xl mb-1">BERT</p>
             <p className="text-white/60 text-sm">
-              Semantic matching, not keyword search
+              Fine-tuned classifier, not keyword search
             </p>
           </div>
           <div>
-            <p className="font-serif text-3xl mb-1">65%</p>
+            <p className="font-serif text-3xl mb-1">Custom</p>
             <p className="text-white/60 text-sm">
-              Match threshold for instant notification
+              Eligibility threshold, set by each organisation
             </p>
           </div>
           <div>
-            <p className="font-serif text-3xl mb-1">24</p>
+            <p className="font-serif text-3xl mb-1">43</p>
             <p className="text-white/60 text-sm">
               Job categories, precisely classified
             </p>

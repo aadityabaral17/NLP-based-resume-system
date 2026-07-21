@@ -2,6 +2,77 @@ const express = require("express");
 const router = express.Router();
 const auth = require("../middleware/auth");
 const pool = require("../config/database");
+const axios = require("axios");
+
+// GET /api/recommendations/career-tips — AI-generated tips for logged in job seeker
+router.get("/career-tips", auth, async (req, res) => {
+  try {
+    const { id: user_id, user_type } = req.user;
+
+    if (user_type !== "user") {
+      return res.status(403).json({
+        error: { message: "Only job seekers have career tips", status: 403 },
+      });
+    }
+
+    const cvResult = await pool.query(
+      "SELECT predicted_category FROM cvs WHERE user_id = $1 ORDER BY uploaded_at DESC LIMIT 1",
+      [user_id],
+    );
+
+    if (cvResult.rows.length === 0) {
+      return res.json({ top_matches: [], ai_tips: [] });
+    }
+
+    const category = cvResult.rows[0].predicted_category || "General";
+
+    const matchQuery = `
+      SELECT mr.*, j.title, o.company_name 
+      FROM match_results mr
+      JOIN job_vacancies j ON mr.vacancy_id = j.vacancy_id
+      JOIN organisations o ON j.org_id = o.org_id
+      WHERE mr.user_id = $1 AND mr.is_eligible = true
+      ORDER BY mr.composite_score DESC
+      LIMIT 5
+    `;
+    const matchResult = await pool.query(matchQuery, [user_id]);
+    const matches = matchResult.rows;
+
+    const allMissingSkills = new Set();
+    matches.forEach((match) => {
+      (match.missing_skills || []).forEach((skill) =>
+        allMissingSkills.add(skill),
+      );
+    });
+
+    const topMatches = matches.map((match) => ({
+      job_title: match.title,
+      company: match.company_name,
+      match_score: match.composite_score,
+    }));
+
+    const pythonServiceUrl =
+      process.env.PYTHON_SERVICE_URL || "http://localhost:8000";
+    const tipsResponse = await axios.post(
+      `${pythonServiceUrl}/api/career-tips`,
+      {
+        category,
+        missing_skills: Array.from(allMissingSkills),
+        top_matches: topMatches,
+      },
+    );
+
+    res.json({
+      top_matches: topMatches,
+      ai_tips: tipsResponse.data.ai_tips,
+    });
+  } catch (error) {
+    console.error("Error generating career tips:", error);
+    res.status(500).json({
+      error: { message: "Error generating career tips", status: 500 },
+    });
+  }
+});
 
 // GET /api/recommendations/:userid
 router.get("/:userid", auth, async (req, res) => {
@@ -117,11 +188,14 @@ router.get("/export/:jobId", auth, async (req, res) => {
       });
     }
 
+    // Only export candidates who are eligible OR manually shortlisted
     const matchQuery = `
-      SELECT mr.*, u.name, u.email 
+      SELECT mr.*, u.name, u.email, c.skill_entities
       FROM match_results mr
       JOIN users u ON mr.user_id = u.user_id
+      LEFT JOIN cvs c ON c.user_id = mr.user_id
       WHERE mr.vacancy_id = $1
+      AND (mr.is_eligible = true OR mr.status = 'shortlisted')
       ORDER BY mr.composite_score DESC
     `;
 
@@ -131,38 +205,35 @@ router.get("/export/:jobId", auth, async (req, res) => {
     const csvHeaders = [
       "Name",
       "Email",
-      "Match Score",
-      "Cosine Score",
+      "Match Score (%)",
+      "Skills",
       "Missing Skills",
-      "Status",
     ];
     const csvRows = candidates.map((candidate) => [
       candidate.name,
       candidate.email,
-      candidate.composite_score,
-      candidate.cosine_score,
+      Math.round((candidate.composite_score || 0) * 100),
+      (candidate.skill_entities || []).join(", "),
       (candidate.missing_skills || []).join(", "),
-      candidate.is_eligible ? "Eligible" : "Not Eligible",
     ]);
 
     const csvContent = [
       csvHeaders.join(","),
-      ...csvRows.map((row) => row.map((cell) => `"${cell}"`).join(",")),
+      ...csvRows.map((row) =>
+        row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","),
+      ),
     ].join("\n");
 
     res.setHeader("Content-Type", "text/csv");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename=candidates_${jobId}.csv`,
+      `attachment; filename=eligible_candidates_${jobId}.csv`,
     );
     res.send(csvContent);
   } catch (error) {
     console.error("Error exporting candidates:", error);
     res.status(500).json({
-      error: {
-        message: "Error exporting candidates",
-        status: 500,
-      },
+      error: { message: "Error exporting candidates", status: 500 },
     });
   }
 });

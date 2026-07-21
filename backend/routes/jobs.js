@@ -201,8 +201,8 @@ router.get("/recommended/for-me", auth, async (req, res) => {
     const params = [user_id];
 
     if (candidateCategory) {
-      params.push(candidateCategory);
-      query += ` AND j.category = $${params.length}`;
+      params.push(candidateCategory.toUpperCase().replace(/[-\s]/g, ""));
+      query += ` AND UPPER(REPLACE(REPLACE(j.category, '-', ''), ' ', '')) = $${params.length}`;
     }
 
     query += ` ORDER BY j.created_at DESC`;

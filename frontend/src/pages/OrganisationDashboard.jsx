@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import api from "../api/axios";
 import ScoreDial from "../components/ScoreDial";
@@ -18,6 +18,7 @@ function OrganisationDashboard() {
   const [threshold, setThreshold] = useState(65);
   const [showSettings, setShowSettings] = useState(false);
   const [savingThreshold, setSavingThreshold] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
     fetchJobs();
@@ -61,6 +62,7 @@ function OrganisationDashboard() {
     setLoadingCandidates(true);
     setSelectedJob(vacancy_id);
     setCandidatePage(page);
+    setSearchParams({ job: vacancy_id });
     try {
       const res = await api.get(
         `/match/candidates/${vacancy_id}?page=${page}&limit=10`,
@@ -73,6 +75,13 @@ function OrganisationDashboard() {
       setLoadingCandidates(false);
     }
   };
+
+  useEffect(() => {
+    const jobFromUrl = searchParams.get("job");
+    if (jobFromUrl && jobs.length > 0 && !selectedJob) {
+      fetchCandidates(jobFromUrl, 1);
+    }
+  }, [jobs]);
 
   const handleExportCSV = async (vacancy_id) => {
     try {
@@ -128,6 +137,12 @@ function OrganisationDashboard() {
             className="text-sm text-slate hover:text-indigo transition"
           >
             ⚙ Settings
+          </button>
+          <button
+            onClick={() => navigate("/batch-ranking")}
+            className="text-sm text-slate hover:text-indigo transition"
+          >
+            Batch Ranking
           </button>
           <button
             onClick={() => navigate("/jobs/post")}
@@ -254,7 +269,7 @@ function OrganisationDashboard() {
                     </p>
                     {job.required_skills?.length > 0 && (
                       <div className="flex gap-1 mt-2 flex-wrap">
-                        {job.required_skills.slice(0, 3).map((skill, i) => (
+                        {job.required_skills.map((skill, i) => (
                           <span
                             key={i}
                             className="text-xs bg-indigo-light text-indigo px-2 py-1 rounded-full"
@@ -328,29 +343,34 @@ function OrganisationDashboard() {
                           <span className="text-xs text-slate/60">
                             #{index + 1}
                           </span>
-                          <p className="font-medium text-ink">
-                            {candidate.name}
-                          </p>
-                          <StatusBadge status={candidate.status} />
-                          {candidate.is_eligible && (
-                            <span className="text-xs bg-success-light text-success px-2 py-0.5 rounded-full font-medium">
-                              ✓ Eligible
-                            </span>
-                          )}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                              onClick={() =>
+                                navigate(`/candidates/${candidate.user_id}`)
+                              }
+                              className="font-medium text-ink hover:text-indigo hover:underline text-left"
+                            >
+                              {candidate.name}
+                            </button>
+                            <StatusBadge status={candidate.status} />
+                            {candidate.is_eligible && (
+                              <span className="text-xs bg-success-light text-success px-2 py-0.5 rounded-full font-medium">
+                                ✓ Eligible
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <p className="text-sm text-slate">{candidate.email}</p>
                         {candidate.missing_skills?.length > 0 && (
                           <div className="flex gap-1 mt-2 flex-wrap">
-                            {candidate.missing_skills
-                              .slice(0, 3)
-                              .map((skill, i) => (
-                                <span
-                                  key={i}
-                                  className="text-xs bg-danger-light text-danger px-2 py-1 rounded-full"
-                                >
-                                  Missing: {skill}
-                                </span>
-                              ))}
+                            {candidate.missing_skills.map((skill, i) => (
+                              <span
+                                key={i}
+                                className="text-xs bg-danger-light text-danger px-2 py-1 rounded-full"
+                              >
+                                Missing: {skill}
+                              </span>
+                            ))}
                           </div>
                         )}
 

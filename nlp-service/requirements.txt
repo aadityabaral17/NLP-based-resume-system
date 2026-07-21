@@ -5,3 +5,6 @@ python-docx
 spacy
 scikit-learn
 python-multipart
+sentence-transformers
+torch
+transformers

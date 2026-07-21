@@ -10,6 +10,7 @@ import EditJob from "./pages/EditJob";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Profile from "./pages/Profile";
 import CandidateProfile from "./pages/CandidateProfile";
+import BatchRanking from "./pages/BatchRanking";
 
 function App() {
   return (
@@ -75,6 +76,14 @@ function App() {
         element={
           <ProtectedRoute allowedRole="organisation">
             <CandidateProfile />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/batch-ranking"
+        element={
+          <ProtectedRoute allowedRole="organisation">
+            <BatchRanking />
           </ProtectedRoute>
         }
       />

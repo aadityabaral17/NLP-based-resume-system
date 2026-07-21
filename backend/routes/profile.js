@@ -28,9 +28,9 @@ router.get("/", auth, async (req, res) => {
     }
 
     const cvResult = await pool.query(
-      `SELECT cv_id, file_path, extracted_text, skill_entities, uploaded_at
-       FROM cvs WHERE user_id = $1
-       ORDER BY uploaded_at DESC LIMIT 1`,
+      `SELECT cv_id, file_path, extracted_text, skill_entities, predicted_category, career_tips, uploaded_at
+   FROM cvs WHERE user_id = $1
+   ORDER BY uploaded_at DESC LIMIT 1`,
       [user_id],
     );
 

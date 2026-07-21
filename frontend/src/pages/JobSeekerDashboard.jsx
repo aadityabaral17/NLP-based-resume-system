@@ -12,7 +12,6 @@ function JobSeekerDashboard() {
   const [jobs, setJobs] = useState([]);
   const [matches, setMatches] = useState([]);
   const [applications, setApplications] = useState([]);
-  const [recommendations, setRecommendations] = useState(null);
   const [loading, setLoading] = useState(true);
   const [applyingId, setApplyingId] = useState(null);
   const [cancellingId, setCancellingId] = useState(null);
@@ -25,6 +24,8 @@ function JobSeekerDashboard() {
   const [showRecommended, setShowRecommended] = useState(false);
   const [expandedJobId, setExpandedJobId] = useState(null);
   const [hasCV, setHasCV] = useState(true);
+  const [careerTips, setCareerTips] = useState(null);
+  const [loadingTips, setLoadingTips] = useState(false);
 
   const categories = ["All", ...jobCategories];
 
@@ -56,8 +57,6 @@ function JobSeekerDashboard() {
       const appRes = await api.get("/applications/my");
       setApplications(appRes.data.applications || []);
 
-      const recRes = await api.get(`/recommendations/${user?.id}`);
-      setRecommendations(recRes.data.recommendations);
       try {
         const profileRes = await api.get("/profile");
         setHasCV(!!profileRes.data.cv);
@@ -129,20 +128,29 @@ function JobSeekerDashboard() {
     );
   }
 
+  const fetchCareerTips = async () => {
+    setLoadingTips(true);
+    try {
+      const res = await api.get("/recommendations/career-tips");
+      setCareerTips(res.data);
+    } catch (err) {
+      console.error("Error fetching career tips:", err);
+    } finally {
+      setLoadingTips(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-mist">
       {/* Navbar */}
       <nav className="bg-white border-b border-line px-4 sm:px-6 py-3 sm:py-4 flex flex-wrap justify-between items-center gap-3">
         <span className="font-serif text-lg text-ink">ResumeMatch</span>
         <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
-          <span className="text-sm text-slate hidden sm:inline">
-            Hello, {user?.name}
-          </span>
           <button
             onClick={() => navigate("/profile")}
-            className="text-sm text-slate hover:text-indigo transition"
+            className="text-sm text-ink font-medium hover:text-indigo transition"
           >
-            My Profile
+            {user?.name}
           </button>
           <button
             onClick={handleLogout}
@@ -246,7 +254,7 @@ function JobSeekerDashboard() {
                       </p>
                       {app.missing_skills?.length > 0 && (
                         <div className="flex gap-2 mt-2 flex-wrap">
-                          {app.missing_skills.slice(0, 3).map((skill, i) => (
+                          {app.missing_skills.map((skill, i) => (
                             <span
                               key={i}
                               className="text-xs bg-danger-light text-danger px-2 py-1 rounded-full"
@@ -494,61 +502,6 @@ function JobSeekerDashboard() {
             </div>
           )}
         </div>
-
-        {/* Recommendations Panel */}
-        {recommendations && (
-          <div className="mt-8">
-            <h3 className="font-serif text-lg text-ink mb-4">
-              Career recommendations
-            </h3>
-            {recommendations.top_matches?.length > 0 && (
-              <div className="bg-white rounded-xl p-5 border border-line mb-4">
-                <h4 className="font-medium text-ink mb-3">
-                  Your top job matches
-                </h4>
-                <div className="space-y-2">
-                  {recommendations.top_matches.map((match, i) => (
-                    <div
-                      key={i}
-                      className="flex justify-between items-center py-2 border-b border-line last:border-0"
-                    >
-                      <div>
-                        <p className="text-sm font-medium text-ink">
-                          {match.job_title}
-                        </p>
-                        <p className="text-xs text-slate">{match.company}</p>
-                      </div>
-                      <span className="text-sm font-bold text-amber">
-                        {Math.round(match.match_score * 100)}%
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {recommendations.career_tips?.map((category, i) => (
-              <div
-                key={i}
-                className="bg-white rounded-xl p-5 border border-line mb-4"
-              >
-                <h4 className="font-medium text-ink mb-3">
-                  {category.category === "Skill Development" && "📚 "}
-                  {category.category === "Job Search Strategy" && "🎯 "}
-                  {category.category === "Career Growth" && "🚀 "}
-                  {category.category}
-                </h4>
-                <ul className="space-y-2">
-                  {category.tips.map((tip, j) => (
-                    <li key={j} className="text-sm text-slate flex gap-2">
-                      <span className="text-indigo mt-0.5">→</span>
-                      {tip}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );

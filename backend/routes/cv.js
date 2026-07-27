@@ -145,8 +145,7 @@ router.post("/upload", auth, upload.single("cv_file"), async (req, res) => {
         `${pythonServiceUrl}/api/career-tips`,
         {
           category: parsedData.predicted_category || "General",
-          cv_skills: parsedData.skills || [],
-          missing_skills: Array.from(allMissingSkills),
+          cv_text: parsedData.raw_text || "",
           top_matches: topMatches,
         },
       );

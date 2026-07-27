@@ -60,9 +60,15 @@ async function initializeDatabase() {
         experience_level VARCHAR(100),
         employment_type VARCHAR(100),
         deadline DATE,
+        positions_available INTEGER NOT NULL DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (org_id) REFERENCES organisations(org_id) ON DELETE CASCADE
       )
+    `);
+
+    await pool.query(`
+      ALTER TABLE job_vacancies
+      ADD COLUMN IF NOT EXISTS positions_available INTEGER NOT NULL DEFAULT 1
     `);
 
     // Create match_results table

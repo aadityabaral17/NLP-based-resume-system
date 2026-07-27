@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import api from "../api/axios";
@@ -14,13 +14,44 @@ function PostJob() {
     employment_type: "Full Time",
     deadline: "",
     category: jobCategories[0],
+    positions_available: 1,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [vacancyStats, setVacancyStats] = useState({
+    org_vacancies: 0,
+    total_vacancies: 0,
+  });
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsError, setStatsError] = useState("");
 
   const handleChange = (e) =>
     setFormData({ ...formData, [e.target.name]: e.target.value });
+
+  useEffect(() => {
+    const fetchVacancyStats = async () => {
+      if (!user) {
+        setStatsLoading(false);
+        return;
+      }
+      setStatsError("");
+      setStatsLoading(true);
+      try {
+        const res = await api.get("/jobs/stats?scope=org");
+        setVacancyStats({
+          org_vacancies: res.data.posted_jobs ?? 0,
+          total_vacancies: res.data.vacancies ?? 0,
+        });
+      } catch (err) {
+        setStatsError("Unable to load vacancy counts.");
+      } finally {
+        setStatsLoading(false);
+      }
+    };
+
+    fetchVacancyStats();
+  }, [user]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -28,9 +59,21 @@ function PostJob() {
     setSuccess("");
     setLoading(true);
     try {
-      await api.post("/jobs", formData);
-      setSuccess("Job posted successfully! Redirecting...");
-      setTimeout(() => navigate("/dashboard/organisation"), 2000);
+      const payload = {
+        ...formData,
+        positions_available: Number(formData.positions_available) || 1,
+      };
+      const res = await api.post("/jobs", payload);
+      const orgVacancies = res.data.org_vacancies;
+      const totalVacancies = res.data.total_vacancies;
+      setSuccess(
+        `Job posted successfully! Your organisation now has ${orgVacancies} open vacancy${
+          orgVacancies === 1 ? "" : "ies"
+        }, and the platform has ${totalVacancies} live job posting${
+          totalVacancies === 1 ? "" : "s"
+        }.`,
+      );
+      setTimeout(() => navigate("/dashboard/organisation"), 2500);
     } catch (err) {
       setError(
         err.response?.data?.error?.message || "Failed to post job. Try again.",
@@ -79,6 +122,25 @@ function PostJob() {
         )}
 
         <div className="bg-white rounded-2xl border border-line shadow-sm p-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+            <div className="rounded-2xl border border-line p-4 bg-slate-50">
+              <p className="text-sm text-slate mb-2">Your current open vacancies</p>
+              <p className="font-serif text-3xl text-indigo">
+                {statsLoading ? "..." : vacancyStats.org_vacancies}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-line p-4 bg-slate-50">
+              <p className="text-sm text-slate mb-2">Platform live vacancies</p>
+              <p className="font-serif text-3xl text-amber">
+                {statsLoading ? "..." : vacancyStats.total_vacancies}
+              </p>
+            </div>
+          </div>
+          {statsError && (
+            <div className="bg-danger-light text-danger text-sm px-4 py-3 rounded-lg mb-4">
+              {statsError}
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className={labelClass}>Job title</label>
@@ -140,17 +202,34 @@ function PostJob() {
               </div>
             </div>
 
-            <div>
-              <label className={labelClass}>Application deadline</label>
-              <input
-                type="date"
-                name="deadline"
-                value={formData.deadline}
-                onChange={handleChange}
-                required
-                min={new Date().toISOString().split("T")[0]}
-                className={inputClass}
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>Number of positions</label>
+                <input
+                  type="number"
+                  name="positions_available"
+                  value={formData.positions_available}
+                  onChange={handleChange}
+                  min="1"
+                  required
+                  className={inputClass}
+                />
+                <p className="text-xs text-slate/70 mt-1.5">
+                  Set how many people this posting is meant to hire.
+                </p>
+              </div>
+              <div>
+                <label className={labelClass}>Application deadline</label>
+                <input
+                  type="date"
+                  name="deadline"
+                  value={formData.deadline}
+                  onChange={handleChange}
+                  required
+                  min={new Date().toISOString().split("T")[0]}
+                  className={inputClass}
+                />
+              </div>
             </div>
 
             <div>

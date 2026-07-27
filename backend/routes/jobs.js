@@ -1,9 +1,12 @@
 const express = require("express");
 const router = express.Router();
+const jwt = require("jsonwebtoken");
 const auth = require("../middleware/auth");
 const pool = require("../config/database");
 const axios = require("axios");
 const { sendMatchNotification } = require("../utils/emailService");
+const { buildDashboardStats } = require("../utils/dashboardStats");
+const { normalizePositionsAvailable, ensureJobVacanciesPositionsColumn } = require("../utils/jobPosting");
 
 // POST /api/jobs
 router.post("/", auth, async (req, res) => {
@@ -26,7 +29,12 @@ router.post("/", auth, async (req, res) => {
       employment_type,
       deadline,
       category,
+      positions_available,
     } = req.body;
+
+    await ensureJobVacanciesPositionsColumn(pool);
+
+    const normalizedPositions = normalizePositionsAvailable(positions_available);
 
     if (!title || !description) {
       return res.status(400).json({
@@ -48,9 +56,9 @@ router.post("/", auth, async (req, res) => {
     const parsedData = response.data;
 
     const query = `
-      INSERT INTO job_vacancies (org_id, title, description, required_skills, experience_level, employment_type, category, deadline)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING vacancy_id, org_id, title, description, required_skills, experience_level, employment_type, category, deadline, created_at
+      INSERT INTO job_vacancies (org_id, title, description, required_skills, experience_level, employment_type, category, deadline, positions_available)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING vacancy_id, org_id, title, description, required_skills, experience_level, employment_type, category, deadline, positions_available, created_at
     `;
 
     const result = await pool.query(query, [
@@ -62,9 +70,20 @@ router.post("/", auth, async (req, res) => {
       employment_type,
       category,
       deadline,
+      normalizedPositions,
     ]);
 
     const job = result.rows[0];
+
+    const [orgVacanciesResult, globalVacanciesResult] = await Promise.all([
+      pool.query(
+        "SELECT COALESCE(SUM(COALESCE(positions_available, 1))::int, 0) AS org_vacancies FROM job_vacancies WHERE org_id = $1 AND deadline >= CURRENT_DATE",
+        [org_id],
+      ),
+      pool.query(
+        "SELECT COALESCE(SUM(COALESCE(positions_available, 1))::int, 0) AS total_vacancies FROM job_vacancies WHERE deadline >= CURRENT_DATE",
+      ),
+    ]);
 
     res.status(201).json({
       message: "Job posted successfully",
@@ -78,8 +97,11 @@ router.post("/", auth, async (req, res) => {
         employment_type: job.employment_type,
         category: job.category,
         deadline: job.deadline,
+        positions_available: job.positions_available || 1,
         created_at: job.created_at,
       },
+      org_vacancies: Number(orgVacanciesResult.rows[0].org_vacancies || 0),
+      total_vacancies: Number(globalVacanciesResult.rows[0].total_vacancies || 0),
     });
   } catch (error) {
     console.error("Job posting error:", error);
@@ -138,6 +160,7 @@ router.get("/", async (req, res) => {
       employment_type: job.employment_type,
       deadline: job.deadline,
       category: job.category,
+      positions_available: job.positions_available || 1,
       created_at: job.created_at,
     }));
 
@@ -152,6 +175,83 @@ router.get("/", async (req, res) => {
     console.error("Error fetching jobs:", error);
     res.status(500).json({
       error: { message: "Error fetching jobs", status: 500 },
+    });
+  }
+});
+
+router.get("/stats", async (req, res) => {
+  try {
+    const authHeader = req.header("Authorization");
+    const token = authHeader?.replace("Bearer ", "");
+    let user = null;
+
+    if (token) {
+      try {
+        user = jwt.verify(token, process.env.JWT_SECRET);
+      } catch (error) {
+        if (error.name !== "TokenExpiredError") {
+          console.warn("Invalid dashboard stats token:", error.message);
+        }
+      }
+    }
+
+    const isOrgScope = req.query.scope === "org" || req.query.org === "true";
+
+    if (isOrgScope && user?.user_type === "organisation") {
+      const [postedJobsResult, openVacanciesResult, applicationsResult, totalVacanciesResult] =
+        await Promise.all([
+          pool.query(
+            "SELECT COUNT(*)::int AS posted_jobs FROM job_vacancies WHERE org_id = $1",
+            [user.id],
+          ),
+          pool.query(
+            "SELECT COALESCE(SUM(COALESCE(positions_available, 1))::int, 0) AS open_vacancies FROM job_vacancies WHERE org_id = $1 AND deadline >= CURRENT_DATE",
+            [user.id],
+          ),
+          pool.query(
+            `SELECT COUNT(*)::int AS total_applications
+             FROM applications a
+             JOIN job_vacancies j ON a.vacancy_id = j.vacancy_id
+             WHERE j.org_id = $1`,
+            [user.id],
+          ),
+          pool.query(
+            "SELECT COUNT(*)::int AS total_vacancies FROM job_vacancies WHERE deadline >= CURRENT_DATE",
+          ),
+        ]);
+
+      const stats = buildDashboardStats({
+        orgPostedJobs: Number(postedJobsResult.rows[0].posted_jobs || 0),
+        orgOpenVacancies: Number(openVacanciesResult.rows[0].open_vacancies || 0),
+        orgApplications: Number(applicationsResult.rows[0].total_applications || 0),
+        isOrganisation: true,
+      });
+
+      stats.total_vacancies = Number(
+        totalVacanciesResult.rows[0].total_vacancies || 0,
+      );
+
+      return res.json(stats);
+    }
+
+    const jobsResult = await pool.query(
+      "SELECT COUNT(*)::int AS live_jobs, COALESCE(SUM(COALESCE(positions_available, 1))::int, 0) AS open_vacancies FROM job_vacancies WHERE deadline >= CURRENT_DATE",
+    );
+    const organisationsResult = await pool.query(
+      "SELECT COUNT(*)::int AS organisation_count FROM organisations",
+    );
+
+    const stats = buildDashboardStats({
+      globalLiveJobs: Number(jobsResult.rows[0].live_jobs || 0),
+      globalVacancies: Number(jobsResult.rows[0].open_vacancies || 0),
+      organisationCount: Number(organisationsResult.rows[0].organisation_count || 0),
+    });
+
+    res.json(stats);
+  } catch (error) {
+    console.error("Error fetching job stats:", error);
+    res.status(500).json({
+      error: { message: "Error fetching job stats", status: 500 },
     });
   }
 });
@@ -234,6 +334,7 @@ router.get("/recommended/for-me", auth, async (req, res) => {
         employment_type: job.employment_type,
         deadline: job.deadline,
         category: job.category,
+        positions_available: job.positions_available || 1,
         created_at: job.created_at,
         preview_score: overlapScore,
       };
@@ -289,6 +390,7 @@ router.get("/:id", async (req, res) => {
         employment_type: job.employment_type,
         deadline: job.deadline,
         category: job.category,
+        positions_available: job.positions_available || 1,
         created_at: job.created_at,
       },
     });
@@ -337,7 +439,12 @@ router.put("/:id", auth, async (req, res) => {
       employment_type,
       deadline,
       category,
+      positions_available,
     } = req.body;
+
+    await ensureJobVacanciesPositionsColumn(pool);
+
+    const hasPositionsAvailable = Object.prototype.hasOwnProperty.call(req.body, "positions_available");
 
     // If title or description changed (or provided), re-run parsing to get required_skills
     let parsedData = {};
@@ -384,6 +491,10 @@ router.put("/:id", auth, async (req, res) => {
       fields.push(`deadline = $${idx++}`);
       values.push(deadline);
     }
+    if (hasPositionsAvailable) {
+      fields.push(`positions_available = $${idx++}`);
+      values.push(normalizePositionsAvailable(positions_available));
+    }
     if (category) {
       fields.push(`category = $${idx++}`);
       values.push(category);
@@ -408,6 +519,11 @@ router.put("/:id", auth, async (req, res) => {
     values.push(vacancy_id);
 
     const result = await pool.query(query, values);
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        error: { message: "Job not found", status: 404 },
+      });
+    }
 
     const job = result.rows[0];
 
@@ -423,6 +539,7 @@ router.put("/:id", auth, async (req, res) => {
         employment_type: job.employment_type,
         category: job.category,
         deadline: job.deadline,
+        positions_available: job.positions_available || 1,
         created_at: job.created_at,
       },
     });

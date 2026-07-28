@@ -19,11 +19,54 @@ function OrganisationDashboard() {
   const [showSettings, setShowSettings] = useState(false);
   const [savingThreshold, setSavingThreshold] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
+  const [orgStats, setOrgStats] = useState({
+    posted_jobs: 0,
+    vacancies: 0,
+    total_applications: 0,
+  });
+  const [showCompanyEditor, setShowCompanyEditor] = useState(false);
+  const [companyProfile, setCompanyProfile] = useState({
+    companyName: user?.name || "Your organisation",
+    companyDescription: "Building thoughtful hiring experiences with ResumeMatch.",
+  });
+  const [companyForm, setCompanyForm] = useState({
+    companyName: user?.name || "Your organisation",
+    companyDescription: "Building thoughtful hiring experiences with ResumeMatch.",
+  });
 
   useEffect(() => {
     fetchJobs();
     fetchSettings();
+    fetchDashboardStats();
   }, []);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const savedProfile = localStorage.getItem(`org-profile-${user.id}`);
+    if (savedProfile) {
+      try {
+        const parsed = JSON.parse(savedProfile);
+        const nextProfile = {
+          companyName: parsed.companyName || user.name || "Your organisation",
+          companyDescription:
+            parsed.companyDescription ||
+            "Building thoughtful hiring experiences with ResumeMatch.",
+        };
+        setCompanyProfile(nextProfile);
+        setCompanyForm(nextProfile);
+      } catch (err) {
+        console.error("Error reading saved company profile:", err);
+      }
+    } else {
+      const initialProfile = {
+        companyName: user.name || "Your organisation",
+        companyDescription: "Building thoughtful hiring experiences with ResumeMatch.",
+      };
+      setCompanyProfile(initialProfile);
+      setCompanyForm(initialProfile);
+    }
+  }, [user?.id, user?.name]);
 
   const fetchSettings = async () => {
     try {
@@ -55,6 +98,15 @@ function OrganisationDashboard() {
       console.error("Error fetching jobs:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchDashboardStats = async () => {
+    try {
+      const res = await api.get("/jobs/stats?scope=org");
+      setOrgStats(res.data || {});
+    } catch (err) {
+      console.error("Error fetching dashboard stats:", err);
     }
   };
 
@@ -115,6 +167,27 @@ function OrganisationDashboard() {
     navigate("/login");
   };
 
+  const openCompanyEditor = () => {
+    setCompanyForm(companyProfile);
+    setShowCompanyEditor(true);
+  };
+
+  const saveCompanyProfile = (e) => {
+    e.preventDefault();
+    const nextProfile = {
+      companyName: companyForm.companyName.trim() || "Your organisation",
+      companyDescription:
+        companyForm.companyDescription.trim() ||
+        "Building thoughtful hiring experiences with ResumeMatch.",
+    };
+
+    setCompanyProfile(nextProfile);
+    if (user?.id) {
+      localStorage.setItem(`org-profile-${user.id}`, JSON.stringify(nextProfile));
+    }
+    setShowCompanyEditor(false);
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-mist flex items-center justify-center">
@@ -126,38 +199,110 @@ function OrganisationDashboard() {
   return (
     <div className="min-h-screen bg-mist">
       {/* Navbar */}
-      <nav className="bg-white border-b border-line px-4 sm:px-6 py-3 sm:py-4 flex flex-wrap justify-between items-center gap-3">
-        <span className="font-serif text-lg text-ink">ResumeMatch</span>
-        <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
-          <span className="text-sm text-slate hidden sm:inline">
-            {user?.name}
-          </span>
-          <button
-            onClick={() => setShowSettings(!showSettings)}
-            className="text-sm text-slate hover:text-indigo transition"
-          >
-            ⚙ Settings
-          </button>
-          <button
-            onClick={() => navigate("/batch-ranking")}
-            className="text-sm text-slate hover:text-indigo transition"
-          >
-            Batch Ranking
-          </button>
-          <button
-            onClick={() => navigate("/jobs/post")}
-            className="text-sm bg-indigo text-white px-4 py-2 rounded-lg hover:bg-indigo-dark transition"
-          >
-            Post a job
-          </button>
-          <button
-            onClick={handleLogout}
-            className="text-sm text-slate hover:text-danger transition"
-          >
-            Logout
-          </button>
+      <nav className="bg-white/95 backdrop-blur border-b border-line px-4 sm:px-6 py-3 sm:py-4">
+        <div className="max-w-5xl mx-auto flex flex-wrap justify-between items-center gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo to-violet-600 flex items-center justify-center text-white font-serif text-lg shadow-sm">
+              R
+            </div>
+            <div>
+              <p className="font-serif text-lg text-ink">ResumeMatch</p>
+              <p className="text-xs text-slate">Hiring command center</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            <button
+              onClick={openCompanyEditor}
+              className="text-sm font-medium text-ink hover:text-indigo transition"
+            >
+              {companyProfile.companyName}
+            </button>
+            <button
+              onClick={() => setShowSettings(!showSettings)}
+              className="text-sm text-slate hover:text-indigo transition"
+            >
+              ⚙ Settings
+            </button>
+            <button
+              onClick={() => navigate("/jobs/post")}
+              className="text-sm bg-indigo text-white px-4 py-2 rounded-lg hover:bg-indigo-dark transition"
+            >
+              Post a job
+            </button>
+            <button
+              onClick={handleLogout}
+              className="text-sm text-slate hover:text-danger transition"
+            >
+              Logout
+            </button>
+          </div>
         </div>
       </nav>
+
+      {showCompanyEditor && (
+        <div className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm px-4 flex items-center justify-center">
+          <div className="w-full max-w-lg rounded-3xl border border-line bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4 mb-5">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-indigo">Company profile</p>
+                <h3 className="font-serif text-xl text-ink mt-1">Polish your organisation presence</h3>
+              </div>
+              <button
+                onClick={() => setShowCompanyEditor(false)}
+                className="text-sm text-slate hover:text-danger transition"
+              >
+                Close
+              </button>
+            </div>
+            <form onSubmit={saveCompanyProfile} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-ink mb-2">
+                  Organisation name
+                </label>
+                <input
+                  type="text"
+                  value={companyForm.companyName}
+                  onChange={(e) =>
+                    setCompanyForm({ ...companyForm, companyName: e.target.value })
+                  }
+                  className="w-full rounded-xl border border-line bg-mist px-3 py-2 text-sm outline-none focus:border-indigo"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-ink mb-2">
+                  Company overview
+                </label>
+                <textarea
+                  rows="4"
+                  value={companyForm.companyDescription}
+                  onChange={(e) =>
+                    setCompanyForm({
+                      ...companyForm,
+                      companyDescription: e.target.value,
+                    })
+                  }
+                  className="w-full rounded-xl border border-line bg-mist px-3 py-2 text-sm outline-none focus:border-indigo"
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCompanyEditor(false)}
+                  className="text-sm text-slate hover:text-ink transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="text-sm bg-indigo text-white px-4 py-2 rounded-lg hover:bg-indigo-dark transition"
+                >
+                  Save profile
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {showSettings && (
         <div className="max-w-5xl mx-auto px-4 pt-6">
@@ -215,24 +360,69 @@ function OrganisationDashboard() {
         {/* Stats row */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-8">
           <div className="bg-white rounded-xl p-5 border border-line text-center">
-            <p className="font-serif text-3xl text-indigo">{jobs.length}</p>
-            <p className="text-sm text-slate mt-1">Job postings</p>
+            <p className="font-serif text-3xl text-indigo">
+              {orgStats.posted_jobs}
+            </p>
+            <p className="text-sm text-slate mt-1">Posted jobs</p>
           </div>
           <div className="bg-white rounded-xl p-5 border border-line text-center">
             <p className="font-serif text-3xl text-success">
-              {candidates.filter((c) => c.is_eligible).length}
+              {orgStats.vacancies}
             </p>
-            <p className="text-sm text-slate mt-1">Eligible candidates</p>
+            <p className="text-sm text-slate mt-1">Total vacancies</p>
           </div>
           <div className="bg-white rounded-xl p-5 border border-line text-center">
             <p className="font-serif text-3xl text-amber">
-              {candidates.length}
+              {orgStats.total_applications}
             </p>
-            <p className="text-sm text-slate mt-1">Total applicants</p>
+            <p className="text-sm text-slate mt-1">Total applications</p>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-indigo to-indigo-dark text-white rounded-2xl p-6 mb-8">
+          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+            <div className="max-w-2xl">
+              <p className="text-sm uppercase tracking-[0.2em] text-white/70">
+                Hiring insight
+              </p>
+              <h3 className="font-serif text-xl mt-2">
+                Let ResumeMatch help you find talent that actually fits your role
+              </h3>
+              <p className="text-sm text-white/80 mt-2">
+                Our NLP engine reads CVs semantically, ranks candidates by role fit, and keeps your hiring decisions focused on real potential rather than keyword matches.
+              </p>
+            </div>
+            <div className="rounded-xl bg-white/15 p-4 min-w-[220px]">
+              <p className="text-sm text-white/80">Current focus</p>
+              <p className="font-medium mt-1">
+                {jobs.length > 0
+                  ? "Review your top-ranked applicants and shortlist faster"
+                  : "Post your first role to start receiving AI-ranked candidates"}
+              </p>
+            </div>
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-2xl border border-line shadow-sm p-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <h3 className="font-serif text-lg text-ink">Batch CV ranking</h3>
+                  <p className="text-sm text-slate mt-1">
+                    Upload a zip of candidate CVs and rank them against a job description without leaving the dashboard.
+                  </p>
+                </div>
+                <button
+                  onClick={() => navigate("/batch-ranking")}
+                  className="text-sm bg-indigo text-white px-4 py-2 rounded-lg hover:bg-indigo-dark transition"
+                >
+                  Open batch ranking
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* Jobs list */}
           <div>
             <h3 className="font-serif text-lg text-ink mb-4">
@@ -263,6 +453,9 @@ function OrganisationDashboard() {
                     <p className="font-medium text-ink">{job.title}</p>
                     <p className="text-sm text-slate/80 mt-1">
                       {job.employment_type} · {job.experience_level}
+                    </p>
+                    <p className="text-xs text-amber mt-1">
+                      {job.positions_available || 1} position{(job.positions_available || 1) === 1 ? "" : "s"} available
                     </p>
                     <p className="text-xs text-slate/70 mt-1">
                       Deadline: {new Date(job.deadline).toLocaleDateString()}

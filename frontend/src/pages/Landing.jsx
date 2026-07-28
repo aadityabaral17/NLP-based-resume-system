@@ -1,7 +1,27 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import api from "../api/axios";
 
 function Landing() {
   const navigate = useNavigate();
+  const [stats, setStats] = useState({
+    available_jobs: 0,
+    vacancies: 0,
+    organizations: 0,
+  });
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const res = await api.get("/jobs/stats");
+        setStats(res.data);
+      } catch (err) {
+        console.error("Error fetching landing stats:", err);
+      }
+    };
+
+    fetchStats();
+  }, []);
 
   return (
     <div className="min-h-screen bg-mist">
@@ -40,13 +60,7 @@ function Landing() {
       </nav>
 
       {/* Hero */}
-      <div className="max-w-5xl mx-auto px-4 pt-16 pb-20 text-center">
-        <div className="inline-flex items-center gap-2 bg-indigo-light px-3 py-1.5 rounded-full mb-6">
-          <span className="text-xs font-medium text-indigo">
-            AI-Powered Recruitment for Nepal
-          </span>
-        </div>
-
+      <div className="max-w-5xl mx-auto px-4 pt-10 pb-12 text-center">
         <h1 className="font-serif text-4xl sm:text-5xl text-ink leading-tight mb-5">
           Where the right CV
           <br />
@@ -72,6 +86,28 @@ function Landing() {
           >
             Hire top talent
           </button>
+        </div>
+      </div>
+
+      {/* Stats-style section */}
+      <div className="bg-ink text-white py-12 mb-16">
+        <div className="max-w-5xl mx-auto px-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-6 text-center">
+          <div className="bg-white/10 rounded-2xl p-5">
+            <p className="font-serif text-3xl mb-1">{stats.available_jobs ?? 0}</p>
+            <p className="text-white/70 text-sm">Live jobs</p>
+          </div>
+          <div className="bg-white/10 rounded-2xl p-5">
+            <p className="font-serif text-3xl mb-1">{stats.vacancies ?? 0}</p>
+            <p className="text-white/70 text-sm">Open vacancies</p>
+          </div>
+          <div className="bg-white/10 rounded-2xl p-5">
+            <p className="font-serif text-3xl mb-1">{stats.organizations ?? 0}</p>
+            <p className="text-white/70 text-sm">Partner organizations</p>
+          </div>
+          <div className="bg-white/10 rounded-2xl p-5">
+            <p className="font-serif text-3xl mb-1">43</p>
+            <p className="text-white/70 text-sm">Classified job categories</p>
+          </div>
         </div>
       </div>
 
@@ -114,30 +150,6 @@ function Landing() {
               Upload your resume once. Our NLP engine reads your skills,
               projects, and experience — then matches you to roles that actually
               fit, and notifies employers when you're a strong match.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Stats-style section */}
-      <div className="bg-ink text-white py-16">
-        <div className="max-w-5xl mx-auto px-4 grid sm:grid-cols-3 gap-8 text-center">
-          <div>
-            <p className="font-serif text-3xl mb-1">BERT</p>
-            <p className="text-white/60 text-sm">
-              Fine-tuned classifier, not keyword search
-            </p>
-          </div>
-          <div>
-            <p className="font-serif text-3xl mb-1">Custom</p>
-            <p className="text-white/60 text-sm">
-              Eligibility threshold, set by each organisation
-            </p>
-          </div>
-          <div>
-            <p className="font-serif text-3xl mb-1">43</p>
-            <p className="text-white/60 text-sm">
-              Job categories, precisely classified
             </p>
           </div>
         </div>

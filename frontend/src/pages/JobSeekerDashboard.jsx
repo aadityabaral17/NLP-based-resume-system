@@ -10,6 +10,7 @@ function JobSeekerDashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [jobs, setJobs] = useState([]);
+  const [recommendedJobs, setRecommendedJobs] = useState([]);
   const [matches, setMatches] = useState([]);
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -26,6 +27,11 @@ function JobSeekerDashboard() {
   const [hasCV, setHasCV] = useState(true);
   const [careerTips, setCareerTips] = useState(null);
   const [loadingTips, setLoadingTips] = useState(false);
+  const [dashboardStats, setDashboardStats] = useState({
+    available_jobs: 0,
+    vacancies: 0,
+    organizations: 0,
+  });
 
   const categories = ["All", ...jobCategories];
 
@@ -56,6 +62,13 @@ function JobSeekerDashboard() {
 
       const appRes = await api.get("/applications/my");
       setApplications(appRes.data.applications || []);
+
+      const statsRes = await api.get("/jobs/stats");
+      setDashboardStats(statsRes.data || {});
+
+      const recommendedRes = await api.get("/jobs/recommended/for-me");
+      setRecommendedJobs(recommendedRes.data.jobs || []);
+      setCandidateCategory(recommendedRes.data.candidate_category || null);
 
       try {
         const profileRes = await api.get("/profile");
@@ -143,21 +156,31 @@ function JobSeekerDashboard() {
   return (
     <div className="min-h-screen bg-mist">
       {/* Navbar */}
-      <nav className="bg-white border-b border-line px-4 sm:px-6 py-3 sm:py-4 flex flex-wrap justify-between items-center gap-3">
-        <span className="font-serif text-lg text-ink">ResumeMatch</span>
-        <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
-          <button
-            onClick={() => navigate("/profile")}
-            className="text-sm text-ink font-medium hover:text-indigo transition"
-          >
-            {user?.name}
-          </button>
-          <button
-            onClick={handleLogout}
-            className="text-sm text-slate hover:text-danger transition"
-          >
-            Logout
-          </button>
+      <nav className="bg-white/95 backdrop-blur border-b border-line px-4 sm:px-6 py-3 sm:py-4">
+        <div className="max-w-5xl mx-auto flex flex-wrap justify-between items-center gap-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo to-violet-600 flex items-center justify-center text-white font-serif text-lg shadow-sm">
+              R
+            </div>
+            <div>
+              <p className="font-serif text-lg text-ink">ResumeMatch</p>
+              <p className="text-xs text-slate">Career intelligence workspace</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            <button
+              onClick={() => navigate("/profile")}
+              className="text-sm font-medium text-ink hover:text-indigo transition"
+            >
+              {user?.name}
+            </button>
+            <button
+              onClick={handleLogout}
+              className="text-sm text-slate hover:text-danger transition"
+            >
+              Logout
+            </button>
+          </div>
         </div>
       </nav>
 
@@ -208,8 +231,10 @@ function JobSeekerDashboard() {
         {/* Stats row */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-8">
           <div className="bg-white rounded-xl p-5 border border-line text-center">
-            <p className="font-serif text-3xl text-indigo">{jobs.length}</p>
-            <p className="text-sm text-slate mt-1">Available jobs</p>
+            <p className="font-serif text-3xl text-indigo">
+              {recommendedJobs.length}
+            </p>
+            <p className="text-sm text-slate mt-1">Matching jobs</p>
           </div>
           <div className="bg-white rounded-xl p-5 border border-line text-center">
             <p className="font-serif text-3xl text-ink">
@@ -223,6 +248,130 @@ function JobSeekerDashboard() {
             </p>
             <p className="text-sm text-slate mt-1">Eligible matches</p>
           </div>
+        </div>
+
+        <div className="mb-8">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <h3 className="font-serif text-lg text-ink">Live platform activity</h3>
+            <span className="text-sm text-slate">
+              Updated from the latest live postings
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+            <div className="bg-white rounded-xl p-5 border border-line text-center">
+              <p className="font-serif text-3xl text-indigo">
+                {dashboardStats.available_jobs ?? 0}
+              </p>
+              <p className="text-sm text-slate mt-1">Live jobs</p>
+            </div>
+            <div className="bg-white rounded-xl p-5 border border-line text-center">
+              <p className="font-serif text-3xl text-ink">
+                {dashboardStats.vacancies ?? 0}
+              </p>
+              <p className="text-sm text-slate mt-1">Open vacancies</p>
+            </div>
+            <div className="bg-white rounded-xl p-5 border border-line text-center">
+              <p className="font-serif text-3xl text-amber">
+                {dashboardStats.organizations ?? 0}
+              </p>
+              <p className="text-sm text-slate mt-1">Partner organizations</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Matching jobs */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <h3 className="font-serif text-lg text-ink">Jobs matching your profile</h3>
+            {candidateCategory && (
+              <span className="text-sm text-amber">
+                Best fit: {candidateCategory}
+              </span>
+            )}
+          </div>
+          {recommendedJobs.length === 0 ? (
+            <div className="bg-white rounded-xl p-8 text-center border border-line">
+              <p className="text-slate">
+                {hasCV
+                  ? "Your CV is ready. We’ll start showing tailored opportunities here as soon as the matching results are refreshed."
+                  : "Upload your CV to unlock matching jobs based on your skills and career interests."}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {recommendedJobs.map((job) => (
+                <div
+                  key={job.vacancy_id}
+                  className="bg-white rounded-xl p-5 border border-line"
+                >
+                  <div className="flex flex-col sm:flex-row justify-between sm:items-start gap-3">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-medium text-ink">{job.title}</p>
+                        {job.category && (
+                          <span className="text-xs bg-indigo-light text-indigo px-2 py-0.5 rounded-full">
+                            {job.category}
+                          </span>
+                        )}
+                        {job.preview_score && (
+                          <span className="text-xs bg-amber-light text-amber px-2 py-0.5 rounded-full">
+                            {Math.round(job.preview_score * 100)}% fit
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-slate">{job.company_name}</p>
+                      <p className="text-sm text-slate/80 mt-1">
+                        {job.employment_type} · {job.experience_level}
+                      </p>
+                      {job.required_skills?.length > 0 && (
+                        <div className="flex gap-2 mt-2 flex-wrap">
+                          {job.required_skills.slice(0, 4).map((skill, i) => (
+                            <span
+                              key={i}
+                              className="text-xs bg-indigo-light text-indigo px-2 py-1 rounded-full"
+                            >
+                              {skill}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <button
+                        onClick={() => toggleJobDescription(job.vacancy_id)}
+                        className="text-xs text-indigo hover:underline mt-2"
+                      >
+                        {expandedJobId === job.vacancy_id
+                          ? "Hide description ▲"
+                          : "View full description ▼"}
+                      </button>
+
+                      {expandedJobId === job.vacancy_id && (
+                        <div className="bg-mist rounded-lg p-4 mt-2">
+                          <p className="text-sm text-ink whitespace-pre-wrap">
+                            {job.description}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                    <div className="sm:ml-4 shrink-0 flex sm:block">
+                      {isApplied(job.vacancy_id) ? (
+                        <span className="text-xs bg-success-light text-success px-3 py-2 rounded-lg font-medium">
+                          ✓ Applied
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleApply(job.vacancy_id)}
+                          disabled={applyingId === job.vacancy_id}
+                          className="text-sm bg-indigo hover:bg-indigo-dark text-white px-4 py-2 rounded-lg transition disabled:opacity-50"
+                        >
+                          {applyingId === job.vacancy_id ? "Applying..." : "Apply"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* My Applications */}

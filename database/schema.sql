@@ -39,6 +39,7 @@ CREATE TABLE job_vacancies (
   experience_level VARCHAR(50),
   employment_type  VARCHAR(50),
   deadline        DATE,
+  positions_available INT NOT NULL DEFAULT 1,
   created_at      TIMESTAMP DEFAULT NOW()
 );
 

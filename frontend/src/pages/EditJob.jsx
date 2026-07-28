@@ -15,6 +15,7 @@ function EditJob() {
     employment_type: "Full Time",
     deadline: "",
     category: jobCategories[0],
+    positions_available: 1,
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -33,6 +34,7 @@ function EditJob() {
           employment_type: job.employment_type || "Full Time",
           deadline: job.deadline ? job.deadline.split("T")[0] : "",
           category: job.category || "Information Technology",
+          positions_available: job.positions_available || 1,
         });
       } catch (err) {
         setError(err.response?.data?.error?.message || "Failed to load job.");
@@ -52,7 +54,11 @@ function EditJob() {
     setSuccess("");
     setSaving(true);
     try {
-      await api.put(`/jobs/${id}`, formData);
+      const payload = {
+        ...formData,
+        positions_available: Number(formData.positions_available) || 1,
+      };
+      await api.put(`/jobs/${id}`, payload);
       setSuccess("Job updated successfully! Redirecting...");
       setTimeout(() => navigate("/dashboard/organisation"), 1500);
     } catch (err) {
@@ -162,17 +168,31 @@ function EditJob() {
                 </select>
               </div>
             </div>
-            <div>
-              <label className={labelClass}>Application deadline</label>
-              <input
-                type="date"
-                name="deadline"
-                value={formData.deadline}
-                onChange={handleChange}
-                required
-                min={new Date().toISOString().split("T")[0]}
-                className={inputClass}
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>Number of positions</label>
+                <input
+                  type="number"
+                  name="positions_available"
+                  value={formData.positions_available}
+                  onChange={handleChange}
+                  min="1"
+                  required
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Application deadline</label>
+                <input
+                  type="date"
+                  name="deadline"
+                  value={formData.deadline}
+                  onChange={handleChange}
+                  required
+                  min={new Date().toISOString().split("T")[0]}
+                  className={inputClass}
+                />
+              </div>
             </div>
             <div>
               <label className={labelClass}>Job category</label>

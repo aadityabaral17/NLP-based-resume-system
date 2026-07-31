@@ -9,21 +9,21 @@ import DashboardSidebar, {
   GridIcon,
   ClipboardCheckIcon,
   SearchIcon,
-  SparklesIcon,
+  ClockIcon,
 } from "../components/DashboardSidebar";
 
 const NAV_ITEMS = [
   { key: "overview", label: "Overview", icon: <GridIcon /> },
   { key: "applied", label: "Applied Jobs", icon: <ClipboardCheckIcon /> },
   { key: "available", label: "Available Jobs", icon: <SearchIcon /> },
-  { key: "recommended", label: "Recommended", icon: <SparklesIcon /> },
+  { key: "history", label: "History", icon: <ClockIcon /> },
 ];
 
 const VIEW_TITLES = {
   overview: "Overview",
   applied: "Applied Jobs",
   available: "Available Jobs",
-  recommended: "Recommended",
+  history: "History",
 };
 
 function JobSeekerDashboard() {
@@ -53,10 +53,6 @@ function JobSeekerDashboard() {
 
   const categories = ["All", ...jobCategories];
 
-  // "available" and "recommended" tabs are backed by the same fetch, keyed
-  // off whether we want the recommended-jobs endpoint or the paged listing.
-  const showRecommended = activeView === "recommended";
-
   useEffect(() => {
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -64,21 +60,13 @@ function JobSeekerDashboard() {
 
   const fetchData = async () => {
     try {
-      let jobsRes;
-      if (showRecommended) {
-        jobsRes = await api.get("/jobs/recommended/for-me");
-        setJobs(jobsRes.data.jobs || []);
-        setCandidateCategory(jobsRes.data.candidate_category || null);
-        setTotalPages(1);
-      } else {
-        const categoryParam =
-          selectedCategory !== "All" ? `&category=${selectedCategory}` : "";
-        jobsRes = await api.get(
-          `/jobs?page=${currentPage}&limit=${jobsPerPage}${categoryParam}`,
-        );
-        setJobs(jobsRes.data.jobs || []);
-        setTotalPages(jobsRes.data.totalPages || 1);
-      }
+      const categoryParam =
+        selectedCategory !== "All" ? `&category=${selectedCategory}` : "";
+      const jobsRes = await api.get(
+        `/jobs?page=${currentPage}&limit=${jobsPerPage}${categoryParam}`,
+      );
+      setJobs(jobsRes.data.jobs || []);
+      setTotalPages(jobsRes.data.totalPages || 1);
 
       const matchRes = await api.get("/match/user");
       setMatches(matchRes.data.matches || []);
@@ -89,9 +77,9 @@ function JobSeekerDashboard() {
       const statsRes = await api.get("/jobs/stats");
       setDashboardStats(statsRes.data || {});
 
-      const recommendedRes = await api.get("/jobs/recommended/for-me");
-      setRecommendedJobs(recommendedRes.data.jobs || []);
-      setCandidateCategory(recommendedRes.data.candidate_category || null);
+      const matchedRes = await api.get("/jobs/matched/for-me");
+      setRecommendedJobs(matchedRes.data.jobs || []);
+      setCandidateCategory(matchedRes.data.candidate_category || null);
 
       try {
         const profileRes = await api.get("/profile");
@@ -148,8 +136,24 @@ function JobSeekerDashboard() {
 
   const isApplied = (vacancy_id) =>
     applications.some((a) => a.vacancy_id === vacancy_id);
-  const canCancel = (vacancy_id) =>
-    applications.find((a) => a.vacancy_id === vacancy_id)?.can_cancel;
+  const canCancel = (vacancy_id) => {
+    const app = applications.find((a) => a.vacancy_id === vacancy_id);
+    return (
+      app?.can_cancel &&
+      app.status !== "rejected" &&
+      app.status !== "shortlisted"
+    );
+  };
+  const isEligibleMatch = (vacancy_id) =>
+    matches.find((m) => m.vacancy_id === vacancy_id)?.is_eligible;
+  const isExpiredApplication = (app) =>
+    !!app.deadline && new Date(app.deadline) < new Date();
+
+  const activeApplications = applications.filter(
+    (app) => !isExpiredApplication(app),
+  );
+  const expiredApplicationsCount =
+    applications.length - activeApplications.length;
 
   const handleLogout = () => {
     logout();
@@ -185,13 +189,31 @@ function JobSeekerDashboard() {
                 {job.category}
               </span>
             )}
-            {showFit && job.preview_score && (
-              <span className="text-xs bg-amber-light text-amber px-2 py-0.5 rounded-full">
-                {Math.round(job.preview_score * 100)}% fit
+            {showFit && job.match_score !== undefined && (
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                  job.is_eligible
+                    ? "bg-success-light text-success"
+                    : "bg-amber-light text-amber"
+                }`}
+              >
+                {Math.round(job.match_score * 100)}% match
               </span>
             )}
           </div>
-          <p className="text-sm text-slate">{job.company_name}</p>
+          {job.org_id ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate(`/organisations/${job.org_id}`);
+              }}
+              className="text-sm text-slate hover:text-indigo hover:underline text-left"
+            >
+              {job.company_name}
+            </button>
+          ) : (
+            <p className="text-sm text-slate">{job.company_name}</p>
+          )}
           <p className="text-sm text-slate/80 mt-1">
             {job.employment_type} · {job.experience_level}
           </p>
@@ -258,7 +280,7 @@ function JobSeekerDashboard() {
     </div>
   );
 
-  const renderApplicationCard = (app) => (
+  const renderApplicationCard = (app, { showEligibility } = {}) => (
     <div
       key={app.application_id}
       className="bg-white rounded-xl p-5 border border-line"
@@ -268,6 +290,19 @@ function JobSeekerDashboard() {
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-medium text-ink">{app.title}</p>
             <StatusBadge status={app.status} />
+            {showEligibility && (
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                  isEligibleMatch(app.vacancy_id)
+                    ? "bg-success-light text-success"
+                    : "bg-amber-light text-amber"
+                }`}
+              >
+                {isEligibleMatch(app.vacancy_id)
+                  ? "✓ Eligible match"
+                  : "Not an eligible match"}
+              </span>
+            )}
           </div>
           <p className="text-sm text-slate">{app.company_name}</p>
           <p className="text-xs text-slate/70 mt-1">
@@ -310,7 +345,8 @@ function JobSeekerDashboard() {
           {app.composite_score && (
             <ScoreDial score={app.composite_score * 100} />
           )}
-          {app.can_cancel &&
+          {!showEligibility &&
+            app.can_cancel &&
             app.status !== "rejected" &&
             app.status !== "shortlisted" && (
               <button
@@ -325,6 +361,15 @@ function JobSeekerDashboard() {
       </div>
     </div>
   );
+
+  // Eligibility is only meaningful in the context of jobs actually applied to
+  // — `matches` can include match_results computed for jobs the user merely
+  // browsed, so counting straight off `matches` could show more "eligible"
+  // than the number of applications, which is what caused the count to look
+  // impossible (e.g. more eligible than applied).
+  const eligibleCount = applications.filter((app) =>
+    isEligibleMatch(app.vacancy_id),
+  ).length;
 
   return (
     <div className="min-h-screen bg-mist flex">
@@ -426,7 +471,7 @@ function JobSeekerDashboard() {
                 </div>
                 <div className="bg-white rounded-xl p-5 border border-line text-center">
                   <p className="font-serif text-3xl text-amber">
-                    {matches.filter((m) => m.is_eligible).length}
+                    {eligibleCount}
                   </p>
                   <p className="text-sm text-slate mt-1">Eligible matches</p>
                 </div>
@@ -465,7 +510,7 @@ function JobSeekerDashboard() {
                 </div>
               </div>
 
-              <div className="mb-8">
+              <div>
                 <div className="flex items-center justify-between gap-3 mb-4">
                   <h3 className="font-serif text-lg text-ink">
                     Jobs matching your profile
@@ -492,34 +537,27 @@ function JobSeekerDashboard() {
                   </div>
                 )}
               </div>
-
-              {applications.length > 0 && (
-                <div className="mb-8">
-                  <div className="flex items-center justify-between gap-3 mb-4">
-                    <h3 className="font-serif text-lg text-ink">
-                      My applications
-                    </h3>
-                    <button
-                      onClick={() => setActiveView("applied")}
-                      className="text-xs text-indigo hover:underline"
-                    >
-                      View all
-                    </button>
-                  </div>
-                  <div className="space-y-3">
-                    {applications.slice(0, 3).map(renderApplicationCard)}
-                  </div>
-                </div>
-              )}
             </>
           )}
 
           {activeView === "applied" && (
             <div>
-              <h3 className="font-serif text-lg text-ink mb-4">
-                My applications
-              </h3>
-              {applications.length === 0 ? (
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <h3 className="font-serif text-lg text-ink">My applications</h3>
+                {expiredApplicationsCount > 0 && (
+                  <span className="text-xs text-slate">
+                    {expiredApplicationsCount} expired posting
+                    {expiredApplicationsCount === 1 ? "" : "s"} moved to{" "}
+                    <button
+                      onClick={() => setActiveView("history")}
+                      className="text-indigo hover:underline"
+                    >
+                      History
+                    </button>
+                  </span>
+                )}
+              </div>
+              {activeApplications.length === 0 ? (
                 <div className="bg-white rounded-xl p-8 text-center border border-line">
                   <p className="text-slate">
                     You haven't applied to any jobs yet.
@@ -527,7 +565,7 @@ function JobSeekerDashboard() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {applications.map(renderApplicationCard)}
+                  {activeApplications.map((app) => renderApplicationCard(app))}
                 </div>
               )}
             </div>
@@ -611,32 +649,29 @@ function JobSeekerDashboard() {
             </div>
           )}
 
-          {activeView === "recommended" && (
+          {activeView === "history" && (
             <div>
               <div className="flex items-center justify-between gap-3 mb-4">
                 <h3 className="font-serif text-lg text-ink">
-                  Recommended jobs for you
-                  {candidateCategory && (
-                    <span className="ml-2 text-sm text-amber font-sans font-normal">
-                      · Based on your {candidateCategory} profile
-                    </span>
-                  )}
+                  Application history
                 </h3>
+                <span className="text-sm text-slate">
+                  {eligibleCount} eligible match
+                  {eligibleCount === 1 ? "" : "es"} out of {applications.length}{" "}
+                  applied
+                </span>
               </div>
-              <p className="text-xs text-slate/70 mb-4">
-                Curated based on your profile. Apply to see your full match
-                score.
-              </p>
-              {jobs.length === 0 ? (
+              {applications.length === 0 ? (
                 <div className="bg-white rounded-xl p-8 text-center border border-line">
                   <p className="text-slate">
-                    No recommended jobs found. Try uploading or updating your
-                    CV.
+                    You haven't applied to any jobs yet.
                   </p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {jobs.map((job) => renderJobCard(job, { showFit: true }))}
+                  {applications.map((app) =>
+                    renderApplicationCard(app, { showEligibility: true }),
+                  )}
                 </div>
               )}
             </div>

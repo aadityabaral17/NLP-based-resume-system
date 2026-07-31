@@ -111,56 +111,6 @@ router.post("/upload", auth, upload.single("cv_file"), async (req, res) => {
 
     const cv = result.rows[0];
 
-    // Generate career tips once at upload time (not on every profile visit)
-    try {
-      const pythonServiceUrl =
-        process.env.PYTHON_SERVICE_URL || "http://localhost:8000";
-
-      // Get any existing eligible matches to inform the tips (may be empty for first upload)
-      const matchResult = await pool.query(
-        `SELECT mr.*, j.title, o.company_name 
-     FROM match_results mr
-     JOIN job_vacancies j ON mr.vacancy_id = j.vacancy_id
-     JOIN organisations o ON j.org_id = o.org_id
-     WHERE mr.user_id = $1 AND mr.is_eligible = true
-     ORDER BY mr.composite_score DESC
-     LIMIT 5`,
-        [user_id],
-      );
-
-      const allMissingSkills = new Set();
-      matchResult.rows.forEach((match) => {
-        (match.missing_skills || []).forEach((skill) =>
-          allMissingSkills.add(skill),
-        );
-      });
-
-      const topMatches = matchResult.rows.map((match) => ({
-        job_title: match.title,
-        company: match.company_name,
-        match_score: match.composite_score,
-      }));
-
-      const tipsResponse = await axios.post(
-        `${pythonServiceUrl}/api/career-tips`,
-        {
-          category: parsedData.predicted_category || "General",
-          cv_text: parsedData.raw_text || "",
-          top_matches: topMatches,
-        },
-      );
-
-      await pool.query("UPDATE cvs SET career_tips = $1 WHERE cv_id = $2", [
-        JSON.stringify({
-          top_matches: topMatches,
-          ai_tips: tipsResponse.data.ai_tips,
-        }),
-        cv.cv_id,
-      ]);
-    } catch (tipsError) {
-      console.error("Error generating career tips at upload:", tipsError);
-    }
-
     // Recalculate match scores for all jobs this user has already applied to
     try {
       const appliedJobsResult = await pool.query(

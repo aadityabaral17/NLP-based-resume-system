@@ -280,91 +280,6 @@ def semantic_similarity(text1: str, text2: str) -> float:
     sim = cosine_similarity([embeddings[0]], [embeddings[1]])[0][0]
     return float(sim)
 
-def generate_career_tips(category: str, cv_text: str, top_matches: list) -> list:
-    """Generate personalized career tips using a local LLM, grounded in the actual CV text."""
-    matches_summary = ", ".join([m["job_title"] for m in top_matches[:3]]) if top_matches else "no applications yet"
-    cv_excerpt = cv_text[:2500]
-
-    prompt = f"""You are a career advisor. Read this candidate's resume and give personalized advice.
-
-RESUME CATEGORY: {category}
-JOBS THEY'VE APPLIED TO SO FAR: {matches_summary}
-
-RESUME TEXT:
-{cv_excerpt}
-
-Based on what you actually read in the resume above, write 3 tips specific to THIS candidate. Do not give generic advice — reference their actual skills, projects, or experience from the resume text.
-
-Respond in EXACTLY this format, no intro, no extra text:
-
-TIP1_TITLE: Skill Development
-TIP1_BULLET1: <specific bullet referencing their actual resume content>
-TIP1_BULLET2: <specific bullet>
-TIP2_TITLE: Job Search Strategy
-TIP2_BULLET1: <specific bullet>
-TIP2_BULLET2: <specific bullet>
-TIP3_TITLE: Career Growth
-TIP3_BULLET1: <specific bullet>
-TIP3_BULLET2: <specific bullet>"""
-
-    try:
-        response = requests.post(
-            "http://localhost:11434/api/generate",
-            json={
-                "model": "llama3.2:3b",
-                "prompt": prompt,
-                "stream": False,
-                "options": {"num_predict": 600}
-            },
-            timeout=60
-        )
-        text = response.json().get("response", "")
-
-        with open("llm_debug.log", "a", encoding="utf-8") as f:
-            f.write(f"\n{'='*60}\n{text}\n")
-
-        cleaned = re.sub(r'\*\*|__|\*', '', text)
-
-        tips = []
-        for tip_num in [1, 2, 3]:
-            title_match = re.search(rf"TIP{tip_num}_TITLE:?\s*(.+)", cleaned, re.IGNORECASE)
-            bullets = []
-            for bullet_num in [1, 2, 3]:
-                bullet_match = re.search(rf"TIP{tip_num}_BULLET{bullet_num}:?\s*(.+)", cleaned, re.IGNORECASE)
-                if bullet_match:
-                    bullet_text = bullet_match.group(1).strip()
-                    bullet_text = re.split(r"\s*TIP\d_", bullet_text, flags=re.IGNORECASE)[0].strip()
-                    bullet_text = bullet_text.rstrip(".,;")
-                    if bullet_text:
-                        bullets.append(bullet_text)
-
-            if title_match and bullets:
-                tips.append({
-                    "title": title_match.group(1).strip().rstrip(".,;"),
-                    "bullets": bullets
-                })
-
-        if len(tips) == 3:
-            return tips
-
-        paragraphs = [p.strip() for p in text.split("\n\n") if p.strip() and len(p.strip()) > 20]
-        if len(paragraphs) >= 3:
-            titles = ["Skill Development", "Job Search Strategy", "Career Growth"]
-            return [
-                {"title": titles[i], "bullets": [paragraphs[i][:200]]}
-                for i in range(3)
-            ]
-
-        raise ValueError(f"Could not parse 3 tips. Got {len(tips)}. Raw text: {text[:300]}")
-
-    except Exception as e:
-        print(f"LLM generation error: {e}")
-        return [
-            {"title": "Skill Development", "bullets": ["Unable to generate personalized tips right now. Please try re-uploading your CV."]},
-            {"title": "Job Search Strategy", "bullets": ["Unable to generate personalized tips right now."]},
-            {"title": "Career Growth", "bullets": ["Unable to generate personalized tips right now."]},
-        ]
-
 # ─── API Endpoints ────────────────────────────────────
 
 @app.get("/health")
@@ -540,12 +455,3 @@ async def match_batch(files: list[UploadFile] = File(...), job_description: str 
     results.sort(key=lambda r: r.get("final_score", -1), reverse=True)
 
     return {"results": results, "count": len(results)}
-
-@app.post("/api/career-tips")
-async def career_tips(data: dict):
-    category = data.get("category", "General")
-    cv_text = data.get("cv_text", "")
-    top_matches = data.get("top_matches", [])
-
-    tips = generate_career_tips(category, cv_text, top_matches)
-    return {"ai_tips": tips}

@@ -9,6 +9,8 @@ import PostJob from "./pages/PostJob";
 import EditJob from "./pages/EditJob";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Profile from "./pages/Profile";
+import OrganisationProfile from "./pages/OrganisationProfile";
+import OrganisationProfileView from "./pages/OrganisationProfileView";
 import CandidateProfile from "./pages/CandidateProfile";
 import BatchRanking from "./pages/BatchRanking";
 
@@ -45,6 +47,14 @@ function App() {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/organisations/:org_id"
+        element={
+          <ProtectedRoute allowedRole="user">
+            <OrganisationProfileView />
+          </ProtectedRoute>
+        }
+      />
 
       {/* Organisation only routes */}
       <Route
@@ -52,6 +62,14 @@ function App() {
         element={
           <ProtectedRoute allowedRole="organisation">
             <OrganisationDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/organisation/profile"
+        element={
+          <ProtectedRoute allowedRole="organisation">
+            <OrganisationProfile />
           </ProtectedRoute>
         }
       />

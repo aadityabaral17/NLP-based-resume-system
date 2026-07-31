@@ -25,18 +25,6 @@ const VIEW_TITLES = {
   settings: "Settings",
 };
 
-const COMPANY_SIZE_OPTIONS = ["1-10", "11-50", "51-200", "201-500", "500+"];
-
-const DEFAULT_COMPANY_PROFILE = {
-  companyName: "",
-  tagline: "",
-  companySize: "",
-  foundedYear: "",
-  headquarters: "",
-  about: "Building thoughtful hiring experiences with ResumeMatch.",
-  contactEmail: "",
-};
-
 function OrganisationDashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -48,57 +36,45 @@ function OrganisationDashboard() {
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [candidatePage, setCandidatePage] = useState(1);
   const [candidateTotalPages, setCandidateTotalPages] = useState(1);
+  const [bulkShortlisting, setBulkShortlisting] = useState(false);
   const [threshold, setThreshold] = useState(65);
   const [savingThreshold, setSavingThreshold] = useState(false);
+  const [batchFiles, setBatchFiles] = useState([]);
+  const [batchJobDescription, setBatchJobDescription] = useState("");
+  const [batchDragging, setBatchDragging] = useState(false);
+  const [batchProcessing, setBatchProcessing] = useState(false);
+  const [batchResults, setBatchResults] = useState(null);
+  const [batchError, setBatchError] = useState("");
   const [searchParams, setSearchParams] = useSearchParams();
   const [orgStats, setOrgStats] = useState({
     posted_jobs: 0,
     vacancies: 0,
     total_applications: 0,
   });
-  const [showCompanyEditor, setShowCompanyEditor] = useState(false);
   const [companyProfile, setCompanyProfile] = useState({
-    ...DEFAULT_COMPANY_PROFILE,
     companyName: user?.name || "Your organisation",
-  });
-  const [companyForm, setCompanyForm] = useState({
-    ...DEFAULT_COMPANY_PROFILE,
-    companyName: user?.name || "Your organisation",
+    tagline: "",
   });
 
   useEffect(() => {
     fetchJobs();
     fetchSettings();
     fetchDashboardStats();
+    fetchCompanyProfile();
   }, []);
 
-  useEffect(() => {
-    if (!user?.id) return;
-
-    const savedProfile = localStorage.getItem(`org-profile-${user.id}`);
-    if (savedProfile) {
-      try {
-        const parsed = JSON.parse(savedProfile);
-        const nextProfile = {
-          ...DEFAULT_COMPANY_PROFILE,
-          ...parsed,
-          companyName: parsed.companyName || user.name || "Your organisation",
-          about: parsed.about || DEFAULT_COMPANY_PROFILE.about,
-        };
-        setCompanyProfile(nextProfile);
-        setCompanyForm(nextProfile);
-      } catch (err) {
-        console.error("Error reading saved company profile:", err);
-      }
-    } else {
-      const initialProfile = {
-        ...DEFAULT_COMPANY_PROFILE,
-        companyName: user.name || "Your organisation",
-      };
-      setCompanyProfile(initialProfile);
-      setCompanyForm(initialProfile);
+  const fetchCompanyProfile = async () => {
+    try {
+      const res = await api.get("/organisations/profile");
+      setCompanyProfile({
+        companyName:
+          res.data.profile.company_name || user?.name || "Your organisation",
+        tagline: res.data.profile.tagline || "",
+      });
+    } catch (err) {
+      console.error("Error fetching organisation profile:", err);
     }
-  }, [user?.id, user?.name]);
+  };
 
   const fetchSettings = async () => {
     try {
@@ -194,36 +170,113 @@ function OrganisationDashboard() {
     }
   };
 
+  const handleShortlistAllEligible = async () => {
+    const toShortlist = candidates.filter(
+      (c) => c.is_eligible && c.status !== "shortlisted",
+    );
+    if (toShortlist.length === 0) return;
+    if (
+      !window.confirm(
+        `Shortlist all ${toShortlist.length} eligible candidate${toShortlist.length > 1 ? "s" : ""}?`,
+      )
+    )
+      return;
+
+    setBulkShortlisting(true);
+    try {
+      await Promise.all(
+        toShortlist.map((c) =>
+          api.patch(`/match/candidates/${c.match_id}/status`, {
+            status: "shortlisted",
+          }),
+        ),
+      );
+      fetchCandidates(selectedJob, candidatePage);
+    } catch (err) {
+      console.error("Error bulk-shortlisting candidates:", err);
+    } finally {
+      setBulkShortlisting(false);
+    }
+  };
+
+  const validateAndAddBatchFiles = (fileList) => {
+    setBatchError("");
+    const allowedTypes = [
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
+    const validFiles = [];
+    for (const file of Array.from(fileList)) {
+      if (!allowedTypes.includes(file.type)) {
+        setBatchError(`${file.name} is not a PDF or DOCX file`);
+        continue;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        setBatchError(`${file.name} exceeds 5MB`);
+        continue;
+      }
+      validFiles.push(file);
+    }
+    setBatchFiles((prev) => [...prev, ...validFiles].slice(0, 20));
+  };
+
+  const handleBatchFileChange = (e) => validateAndAddBatchFiles(e.target.files);
+  const handleBatchDrop = (e) => {
+    e.preventDefault();
+    setBatchDragging(false);
+    validateAndAddBatchFiles(e.dataTransfer.files);
+  };
+  const handleBatchDragOver = (e) => {
+    e.preventDefault();
+    setBatchDragging(true);
+  };
+  const handleBatchDragLeave = () => setBatchDragging(false);
+
+  const removeBatchFile = (index) => {
+    setBatchFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleBatchRank = async () => {
+    if (batchFiles.length === 0) {
+      setBatchError("Please add at least one CV");
+      return;
+    }
+    if (!batchJobDescription.trim()) {
+      setBatchError("Please enter a job description");
+      return;
+    }
+
+    setBatchProcessing(true);
+    setBatchError("");
+    setBatchResults(null);
+    try {
+      const formData = new FormData();
+      batchFiles.forEach((file) => formData.append("cv_files", file));
+      formData.append("job_description", batchJobDescription);
+
+      const res = await api.post("/batch/rank", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setBatchResults(res.data.results || []);
+    } catch (err) {
+      setBatchError(
+        err.response?.data?.error?.message || "Failed to process batch ranking",
+      );
+    } finally {
+      setBatchProcessing(false);
+    }
+  };
+
+  const resetBatchRanking = () => {
+    setBatchFiles([]);
+    setBatchJobDescription("");
+    setBatchResults(null);
+    setBatchError("");
+  };
+
   const handleLogout = () => {
     logout();
     navigate("/login");
-  };
-
-  const openCompanyEditor = () => {
-    setCompanyForm(companyProfile);
-    setShowCompanyEditor(true);
-  };
-
-  const saveCompanyProfile = (e) => {
-    e.preventDefault();
-    const nextProfile = {
-      companyName: companyForm.companyName.trim() || "Your organisation",
-      tagline: companyForm.tagline.trim(),
-      companySize: companyForm.companySize,
-      foundedYear: companyForm.foundedYear,
-      headquarters: companyForm.headquarters.trim(),
-      about: companyForm.about.trim() || DEFAULT_COMPANY_PROFILE.about,
-      contactEmail: companyForm.contactEmail.trim(),
-    };
-
-    setCompanyProfile(nextProfile);
-    if (user?.id) {
-      localStorage.setItem(
-        `org-profile-${user.id}`,
-        JSON.stringify(nextProfile),
-      );
-    }
-    setShowCompanyEditor(false);
   };
 
   const initials = (companyProfile.companyName || "?")
@@ -306,17 +359,36 @@ function OrganisationDashboard() {
 
   const candidatesPanel = (
     <div>
-      <h3 className="font-serif text-lg text-ink mb-4">
-        {selectedJob ? "Ranked candidates" : "Select a job to view candidates"}
-      </h3>
-      {selectedJob && candidates.length > 0 && (
-        <button
-          onClick={() => handleExportCSV(selectedJob)}
-          className="text-sm bg-success text-white hover:opacity-90 px-4 py-2 mb-4 rounded-lg transition"
-        >
-          Export CSV
-        </button>
-      )}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4 min-h-9">
+        <h3 className="font-serif text-lg text-ink">
+          {selectedJob
+            ? "Ranked candidates"
+            : "Select a job to view candidates"}
+        </h3>
+        {selectedJob && candidates.length > 0 && (
+          <div className="flex flex-wrap gap-3">
+            <button
+              onClick={() => handleExportCSV(selectedJob)}
+              className="text-sm bg-success text-white hover:opacity-90 px-4 py-2 rounded-lg transition"
+            >
+              Export CSV
+            </button>
+            {candidates.some(
+              (c) => c.is_eligible && c.status !== "shortlisted",
+            ) && (
+              <button
+                onClick={handleShortlistAllEligible}
+                disabled={bulkShortlisting}
+                className="text-sm bg-indigo text-white hover:bg-indigo-dark px-4 py-2 rounded-lg transition disabled:opacity-50"
+              >
+                {bulkShortlisting
+                  ? "Shortlisting..."
+                  : "★ Shortlist all Eligible"}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
       {loadingCandidates ? (
         <div className="bg-white rounded-xl p-8 text-center border border-line">
           <p className="text-slate">Loading candidates...</p>
@@ -455,7 +527,7 @@ function OrganisationDashboard() {
         activeKey={activeView}
         onSelect={setActiveView}
         footerLabel="Update Profile"
-        onFooterClick={openCompanyEditor}
+        onFooterClick={() => navigate("/organisation/profile")}
       />
 
       <div className="flex-1 min-w-0">
@@ -466,16 +538,10 @@ function OrganisationDashboard() {
           </h1>
           <div className="flex items-center gap-3">
             <button
-              onClick={openCompanyEditor}
+              onClick={() => navigate("/organisation/profile")}
               className="text-sm font-medium text-ink hover:text-indigo transition"
             >
               {companyProfile.companyName}
-            </button>
-            <button
-              onClick={() => navigate("/jobs/post")}
-              className="text-sm bg-indigo text-white px-4 py-2 rounded-lg hover:bg-indigo-dark transition"
-            >
-              Post a job
             </button>
             <button
               onClick={handleLogout}
@@ -485,175 +551,6 @@ function OrganisationDashboard() {
             </button>
           </div>
         </div>
-
-        {showCompanyEditor && (
-          <div className="fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm px-4 flex items-center justify-center">
-            <div className="w-full max-w-lg rounded-3xl border border-line bg-white p-6 shadow-2xl">
-              <div className="flex items-start justify-between gap-4 mb-5">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-indigo">
-                    Company profile
-                  </p>
-                  <h3 className="font-serif text-xl text-ink mt-1">
-                    Polish your organisation presence
-                  </h3>
-                </div>
-                <button
-                  onClick={() => setShowCompanyEditor(false)}
-                  className="text-sm text-slate hover:text-danger transition"
-                >
-                  Close
-                </button>
-              </div>
-              <form
-                onSubmit={saveCompanyProfile}
-                className="space-y-4 max-h-[65vh] overflow-y-auto pr-1"
-              >
-                <div>
-                  <label className="block text-sm font-medium text-ink mb-2">
-                    Company name
-                  </label>
-                  <input
-                    type="text"
-                    value={companyForm.companyName}
-                    onChange={(e) =>
-                      setCompanyForm({
-                        ...companyForm,
-                        companyName: e.target.value,
-                      })
-                    }
-                    className="w-full rounded-xl border border-line bg-mist px-3 py-2 text-sm outline-none focus:border-indigo"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-ink mb-2">
-                    One-line tagline
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="What your company does, in one sentence"
-                    value={companyForm.tagline}
-                    onChange={(e) =>
-                      setCompanyForm({
-                        ...companyForm,
-                        tagline: e.target.value,
-                      })
-                    }
-                    className="w-full rounded-xl border border-line bg-mist px-3 py-2 text-sm outline-none focus:border-indigo"
-                  />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-ink mb-2">
-                      Company size
-                    </label>
-                    <select
-                      value={companyForm.companySize}
-                      onChange={(e) =>
-                        setCompanyForm({
-                          ...companyForm,
-                          companySize: e.target.value,
-                        })
-                      }
-                      className="w-full rounded-xl border border-line bg-mist px-3 py-2 text-sm outline-none focus:border-indigo"
-                    >
-                      <option value="">Select size</option>
-                      {COMPANY_SIZE_OPTIONS.map((size) => (
-                        <option key={size} value={size}>
-                          {size} employees
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-ink mb-2">
-                      Founded year
-                    </label>
-                    <input
-                      type="number"
-                      min="1800"
-                      max={new Date().getFullYear()}
-                      placeholder="e.g. 2019"
-                      value={companyForm.foundedYear}
-                      onChange={(e) =>
-                        setCompanyForm({
-                          ...companyForm,
-                          foundedYear: e.target.value,
-                        })
-                      }
-                      className="w-full rounded-xl border border-line bg-mist px-3 py-2 text-sm outline-none focus:border-indigo"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-ink mb-2">
-                    Headquarters location
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="City, Country"
-                    value={companyForm.headquarters}
-                    onChange={(e) =>
-                      setCompanyForm({
-                        ...companyForm,
-                        headquarters: e.target.value,
-                      })
-                    }
-                    className="w-full rounded-xl border border-line bg-mist px-3 py-2 text-sm outline-none focus:border-indigo"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-ink mb-2">
-                    About
-                  </label>
-                  <textarea
-                    rows="4"
-                    value={companyForm.about}
-                    onChange={(e) =>
-                      setCompanyForm({
-                        ...companyForm,
-                        about: e.target.value,
-                      })
-                    }
-                    className="w-full rounded-xl border border-line bg-mist px-3 py-2 text-sm outline-none focus:border-indigo"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-ink mb-2">
-                    Contact email
-                  </label>
-                  <input
-                    type="email"
-                    placeholder="hiring@yourcompany.com"
-                    value={companyForm.contactEmail}
-                    onChange={(e) =>
-                      setCompanyForm({
-                        ...companyForm,
-                        contactEmail: e.target.value,
-                      })
-                    }
-                    className="w-full rounded-xl border border-line bg-mist px-3 py-2 text-sm outline-none focus:border-indigo"
-                  />
-                </div>
-                <div className="flex justify-end gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowCompanyEditor(false)}
-                    className="text-sm text-slate hover:text-ink transition"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="text-sm bg-indigo text-white px-4 py-2 rounded-lg hover:bg-indigo-dark transition"
-                  >
-                    Save profile
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
 
         <div className="max-w-5xl mx-auto px-4 py-8">
           {activeView === "overview" && (
@@ -691,6 +588,24 @@ function OrganisationDashboard() {
               <div className="mb-8">
                 <div className="bg-white rounded-2xl border border-line shadow-sm p-8 text-center">
                   <h3 className="font-serif text-lg text-ink mb-2">
+                    Job Postings
+                  </h3>
+                  <p className="text-sm text-slate max-w-md mx-auto mb-6">
+                    Post a role to start receiving candidates, ranked
+                    automatically by AI fit as soon as they apply.
+                  </p>
+                  <button
+                    onClick={() => navigate("/jobs/post")}
+                    className="text-sm bg-indigo text-white px-5 py-2.5 rounded-lg hover:bg-indigo-dark transition"
+                  >
+                    Post a job
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <div className="bg-white rounded-2xl border border-line shadow-sm p-8 text-center">
+                  <h3 className="font-serif text-lg text-ink mb-2">
                     Batch CV ranking
                   </h3>
                   <p className="text-sm text-slate max-w-md mx-auto mb-6">
@@ -705,12 +620,27 @@ function OrganisationDashboard() {
                   </button>
                 </div>
               </div>
+            </>
+          )}
 
+          {activeView === "postings" && (
+            <div>
+              <div className="flex items-center justify-between gap-3 mb-6">
+                <h3 className="font-serif text-lg text-ink">Job Postings</h3>
+                <button
+                  onClick={() => navigate("/jobs/post")}
+                  className="text-sm bg-indigo text-white px-4 py-2 rounded-lg hover:bg-indigo-dark transition"
+                >
+                  Post a job
+                </button>
+              </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div>
-                  <h3 className="font-serif text-lg text-ink mb-4">
-                    Your job postings
-                  </h3>
+                  <div className="flex items-center mb-4 min-h-9">
+                    <h3 className="font-serif text-lg text-ink">
+                      Your job postings
+                    </h3>
+                  </div>
                   {jobs.length === 0 ? (
                     <div className="bg-white rounded-xl p-8 text-center border border-line">
                       <p className="text-slate mb-4">No jobs posted yet</p>
@@ -730,59 +660,199 @@ function OrganisationDashboard() {
 
                 {candidatesPanel}
               </div>
-            </>
-          )}
-
-          {activeView === "postings" && (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div>
-                <div className="flex items-center justify-between gap-3 mb-4">
-                  <h3 className="font-serif text-lg text-ink">
-                    Your job postings
-                  </h3>
-                  <button
-                    onClick={() => navigate("/jobs/post")}
-                    className="text-sm bg-indigo text-white px-4 py-2 rounded-lg hover:bg-indigo-dark transition"
-                  >
-                    Post a job
-                  </button>
-                </div>
-                {jobs.length === 0 ? (
-                  <div className="bg-white rounded-xl p-8 text-center border border-line">
-                    <p className="text-slate mb-4">No jobs posted yet</p>
-                    <button
-                      onClick={() => navigate("/jobs/post")}
-                      className="text-sm bg-indigo text-white px-4 py-2 rounded-lg hover:bg-indigo-dark transition"
-                    >
-                      Post your first job
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {jobs.map((job) => jobPostingCard(job))}
-                  </div>
-                )}
-              </div>
-
-              {candidatesPanel}
             </div>
           )}
 
           {activeView === "batch" && (
-            <div className="bg-white rounded-2xl border border-line shadow-sm p-8 text-center">
-              <h3 className="font-serif text-lg text-ink mb-2">
-                Batch CV ranking
-              </h3>
-              <p className="text-sm text-slate max-w-md mx-auto mb-6">
-                Upload a zip of candidate CVs and rank them against a job
-                description without leaving the dashboard.
-              </p>
-              <button
-                onClick={() => navigate("/batch-ranking")}
-                className="text-sm bg-indigo text-white px-5 py-2.5 rounded-lg hover:bg-indigo-dark transition"
-              >
-                Open batch ranking
-              </button>
+            <div>
+              <div className="mb-2">
+                <h3 className="font-serif text-lg text-ink">
+                  Batch CV ranking
+                </h3>
+                <p className="text-slate text-sm mt-1">
+                  Upload CVs you already have and paste a job description to
+                  rank them instantly.
+                </p>
+              </div>
+
+              <div className="bg-indigo-light rounded-xl p-3 my-4">
+                <p className="text-xs text-indigo-dark">
+                  This is a standalone ranking tool — it does not create a job
+                  posting, does not notify candidates, and is separate from
+                  Apply for Job.
+                </p>
+              </div>
+
+              {batchError && (
+                <div className="bg-danger-light text-danger text-sm px-4 py-3 rounded-lg mb-4">
+                  {batchError}
+                </div>
+              )}
+
+              {!batchResults && (
+                <div className="bg-white rounded-2xl border border-line p-6 sm:p-8">
+                  <label className="block text-sm font-medium text-ink mb-1.5">
+                    Job description
+                  </label>
+                  <textarea
+                    value={batchJobDescription}
+                    onChange={(e) => setBatchJobDescription(e.target.value)}
+                    placeholder="Paste or write the job description here..."
+                    rows={5}
+                    className="w-full border border-line rounded-lg px-3.5 py-2 text-sm leading-5 text-ink placeholder:text-slate/60 focus:outline-none focus:ring-2 focus:ring-indigo/30 focus:border-indigo transition resize-none mb-6"
+                  />
+
+                  <label className="block text-sm font-medium text-ink mb-1.5">
+                    Candidate CVs
+                  </label>
+                  <div
+                    onDrop={handleBatchDrop}
+                    onDragOver={handleBatchDragOver}
+                    onDragLeave={handleBatchDragLeave}
+                    onClick={() =>
+                      document.getElementById("batch-cv-input").click()
+                    }
+                    className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition ${
+                      batchDragging
+                        ? "border-indigo bg-indigo-light"
+                        : "border-line hover:border-indigo/50"
+                    }`}
+                  >
+                    <input
+                      id="batch-cv-input"
+                      type="file"
+                      accept=".pdf,.docx"
+                      multiple
+                      onChange={handleBatchFileChange}
+                      className="hidden"
+                    />
+                    <div className="text-3xl mb-2">📁</div>
+                    <p className="text-sm text-ink font-medium">
+                      Drag and drop CVs here, or click to browse
+                    </p>
+                    <p className="text-xs text-slate mt-1">
+                      Up to 20 files · PDF or DOCX · Max 5MB each
+                    </p>
+                  </div>
+
+                  {batchFiles.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                      <p className="text-xs text-slate/70">
+                        {batchFiles.length} file(s) selected
+                      </p>
+                      {batchFiles.map((file, i) => (
+                        <div
+                          key={i}
+                          className="flex items-center justify-between bg-mist rounded-lg px-3 py-2"
+                        >
+                          <span className="text-sm text-ink truncate">
+                            {file.name}
+                          </span>
+                          <button
+                            onClick={() => removeBatchFile(i)}
+                            className="text-xs text-danger hover:underline ml-2 shrink-0"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={handleBatchRank}
+                    disabled={batchProcessing}
+                    className="w-full mt-6 bg-indigo hover:bg-indigo-dark text-white font-medium py-3 rounded-xl text-sm transition disabled:opacity-50"
+                  >
+                    {batchProcessing
+                      ? "Ranking candidates..."
+                      : `Rank ${batchFiles.length || ""} candidate${batchFiles.length !== 1 ? "s" : ""}`}
+                  </button>
+                </div>
+              )}
+
+              {batchResults && (
+                <div>
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-serif text-lg text-ink">
+                      Ranked results
+                    </h3>
+                    <button
+                      onClick={resetBatchRanking}
+                      className="text-sm text-indigo hover:underline"
+                    >
+                      Start new ranking
+                    </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    {batchResults.map((result, index) => (
+                      <div
+                        key={index}
+                        className="bg-white rounded-xl p-4 border border-line"
+                      >
+                        {result.error ? (
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <p className="font-medium text-ink">
+                                {result.filename}
+                              </p>
+                              <p className="text-xs text-danger mt-1">
+                                {result.error}
+                              </p>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex justify-between items-start gap-3">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-xs text-slate/60">
+                                  #{index + 1}
+                                </span>
+                                <p className="font-medium text-ink">
+                                  {result.filename}
+                                </p>
+                                {result.predicted_category && (
+                                  <span className="text-xs bg-indigo-light text-indigo px-2 py-0.5 rounded-full">
+                                    {result.predicted_category}
+                                  </span>
+                                )}
+                              </div>
+                              {result.skills?.length > 0 && (
+                                <div className="flex gap-1 mt-2 flex-wrap">
+                                  {result.skills.slice(0, 6).map((skill, i) => (
+                                    <span
+                                      key={i}
+                                      className="text-xs bg-indigo-light text-indigo px-2 py-1 rounded-full"
+                                    >
+                                      {skill}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              {result.missing_skills?.length > 0 && (
+                                <div className="flex gap-1 mt-2 flex-wrap">
+                                  {result.missing_skills
+                                    .slice(0, 3)
+                                    .map((skill, i) => (
+                                      <span
+                                        key={i}
+                                        className="text-xs bg-danger-light text-danger px-2 py-1 rounded-full"
+                                      >
+                                        Missing: {skill}
+                                      </span>
+                                    ))}
+                                </div>
+                              )}
+                            </div>
+                            <ScoreDial score={result.final_score * 100} />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

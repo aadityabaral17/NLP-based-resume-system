@@ -6,7 +6,10 @@ const pool = require("../config/database");
 const axios = require("axios");
 const { sendMatchNotification } = require("../utils/emailService");
 const { buildDashboardStats } = require("../utils/dashboardStats");
-const { normalizePositionsAvailable, ensureJobVacanciesPositionsColumn } = require("../utils/jobPosting");
+const {
+  normalizePositionsAvailable,
+  ensureJobVacanciesPositionsColumn,
+} = require("../utils/jobPosting");
 
 // POST /api/jobs
 router.post("/", auth, async (req, res) => {
@@ -34,7 +37,8 @@ router.post("/", auth, async (req, res) => {
 
     await ensureJobVacanciesPositionsColumn(pool);
 
-    const normalizedPositions = normalizePositionsAvailable(positions_available);
+    const normalizedPositions =
+      normalizePositionsAvailable(positions_available);
 
     if (!title || !description) {
       return res.status(400).json({
@@ -101,7 +105,9 @@ router.post("/", auth, async (req, res) => {
         created_at: job.created_at,
       },
       org_vacancies: Number(orgVacanciesResult.rows[0].org_vacancies || 0),
-      total_vacancies: Number(globalVacanciesResult.rows[0].total_vacancies || 0),
+      total_vacancies: Number(
+        globalVacanciesResult.rows[0].total_vacancies || 0,
+      ),
     });
   } catch (error) {
     console.error("Job posting error:", error);
@@ -198,32 +204,44 @@ router.get("/stats", async (req, res) => {
     const isOrgScope = req.query.scope === "org" || req.query.org === "true";
 
     if (isOrgScope && user?.user_type === "organisation") {
-      const [postedJobsResult, openVacanciesResult, applicationsResult, totalVacanciesResult] =
-        await Promise.all([
-          pool.query(
-            "SELECT COUNT(*)::int AS posted_jobs FROM job_vacancies WHERE org_id = $1",
-            [user.id],
-          ),
-          pool.query(
-            "SELECT COALESCE(SUM(COALESCE(positions_available, 1))::int, 0) AS open_vacancies FROM job_vacancies WHERE org_id = $1 AND deadline >= CURRENT_DATE",
-            [user.id],
-          ),
-          pool.query(
-            `SELECT COUNT(*)::int AS total_applications
+      const [
+        postedJobsResult,
+        openVacanciesResult,
+        applicationsResult,
+        totalVacanciesResult,
+      ] = await Promise.all([
+        pool.query(
+          "SELECT COUNT(*)::int AS posted_jobs FROM job_vacancies WHERE org_id = $1 AND deadline >= CURRENT_DATE",
+          [user.id],
+        ),
+        pool.query(
+          "SELECT COALESCE(SUM(COALESCE(positions_available, 1))::int, 0) AS open_vacancies FROM job_vacancies WHERE org_id = $1 AND deadline >= CURRENT_DATE",
+          [user.id],
+        ),
+        // Only count applications against currently-live postings so this
+        // number can never read non-zero while posted_jobs/open_vacancies
+        // read zero. Previously this had no deadline filter, so it kept
+        // counting applications to jobs whose deadline had already passed.
+        pool.query(
+          `SELECT COUNT(*)::int AS total_applications
              FROM applications a
              JOIN job_vacancies j ON a.vacancy_id = j.vacancy_id
-             WHERE j.org_id = $1`,
-            [user.id],
-          ),
-          pool.query(
-            "SELECT COUNT(*)::int AS total_vacancies FROM job_vacancies WHERE deadline >= CURRENT_DATE",
-          ),
-        ]);
+             WHERE j.org_id = $1 AND j.deadline >= CURRENT_DATE`,
+          [user.id],
+        ),
+        pool.query(
+          "SELECT COUNT(*)::int AS total_vacancies FROM job_vacancies WHERE deadline >= CURRENT_DATE",
+        ),
+      ]);
 
       const stats = buildDashboardStats({
         orgPostedJobs: Number(postedJobsResult.rows[0].posted_jobs || 0),
-        orgOpenVacancies: Number(openVacanciesResult.rows[0].open_vacancies || 0),
-        orgApplications: Number(applicationsResult.rows[0].total_applications || 0),
+        orgOpenVacancies: Number(
+          openVacanciesResult.rows[0].open_vacancies || 0,
+        ),
+        orgApplications: Number(
+          applicationsResult.rows[0].total_applications || 0,
+        ),
         isOrganisation: true,
       });
 
@@ -244,7 +262,9 @@ router.get("/stats", async (req, res) => {
     const stats = buildDashboardStats({
       globalLiveJobs: Number(jobsResult.rows[0].live_jobs || 0),
       globalVacancies: Number(jobsResult.rows[0].open_vacancies || 0),
-      organisationCount: Number(organisationsResult.rows[0].organisation_count || 0),
+      organisationCount: Number(
+        organisationsResult.rows[0].organisation_count || 0,
+      ),
     });
 
     res.json(stats);
@@ -358,6 +378,116 @@ router.get("/recommended/for-me", auth, async (req, res) => {
   }
 });
 
+// GET /api/jobs/matched/for-me — Real NLP-scored jobs in candidate's category
+router.get("/matched/for-me", auth, async (req, res) => {
+  try {
+    const { id: user_id, user_type } = req.user;
+
+    if (user_type !== "user") {
+      return res.status(403).json({
+        error: {
+          message: "Only job seekers can view matched jobs",
+          status: 403,
+        },
+      });
+    }
+
+    const cvResult = await pool.query(
+      "SELECT extracted_text, skill_entities, predicted_category FROM cvs WHERE user_id = $1 ORDER BY uploaded_at DESC LIMIT 1",
+      [user_id],
+    );
+
+    if (cvResult.rows.length === 0) {
+      return res.json({
+        jobs: [],
+        count: 0,
+        message: "Upload a CV to see matched jobs",
+      });
+    }
+
+    const cv = cvResult.rows[0];
+    const candidateCategory = cv.predicted_category;
+
+    if (!candidateCategory) {
+      return res.json({
+        jobs: [],
+        count: 0,
+        message: "CV category not yet identified",
+      });
+    }
+
+    // Get jobs in the same category (normalized comparison), excluding already-applied ones
+    const jobsResult = await pool.query(
+      `SELECT j.*, o.company_name
+       FROM job_vacancies j
+       JOIN organisations o ON j.org_id = o.org_id
+       WHERE j.deadline >= CURRENT_DATE
+       AND UPPER(REPLACE(REPLACE(j.category, '-', ''), ' ', '')) = $1
+       AND j.vacancy_id NOT IN (
+         SELECT vacancy_id FROM applications WHERE user_id = $2
+       )
+       ORDER BY j.created_at DESC
+       LIMIT 10`,
+      [candidateCategory.toUpperCase().replace(/[-\s]/g, ""), user_id],
+    );
+
+    const pythonServiceUrl =
+      process.env.PYTHON_SERVICE_URL || "http://localhost:8000";
+    const scoredJobs = [];
+
+    for (const job of jobsResult.rows) {
+      try {
+        const matchResponse = await axios.post(
+          `${pythonServiceUrl}/api/match`,
+          {
+            cv_text: cv.extracted_text,
+            skills: cv.skill_entities,
+            job_description: job.description,
+            required_skills: job.required_skills || [],
+          },
+        );
+
+        const matchResult = matchResponse.data;
+
+        scoredJobs.push({
+          vacancy_id: job.vacancy_id,
+          org_id: job.org_id,
+          company_name: job.company_name,
+          title: job.title,
+          description: job.description,
+          required_skills: job.required_skills || [],
+          experience_level: job.experience_level,
+          employment_type: job.employment_type,
+          deadline: job.deadline,
+          category: job.category,
+          created_at: job.created_at,
+          match_score: matchResult.final_score,
+          missing_skills: matchResult.missing_skills,
+          is_eligible: matchResult.is_eligible,
+        });
+      } catch (matchError) {
+        console.error(
+          `Error scoring job ${job.vacancy_id}:`,
+          matchError.message,
+        );
+      }
+    }
+
+    scoredJobs.sort((a, b) => b.match_score - a.match_score);
+
+    res.json({
+      jobs: scoredJobs,
+      count: scoredJobs.length,
+      candidate_category: candidateCategory,
+    });
+  } catch (error) {
+    console.error("Error fetching matched jobs:", error);
+    res.status(500).json({
+      error: { message: "Error fetching matched jobs", status: 500 },
+    });
+  }
+});
+
 // GET /api/jobs/:id - fetch single job
 router.get("/:id", async (req, res) => {
   try {
@@ -444,7 +574,10 @@ router.put("/:id", auth, async (req, res) => {
 
     await ensureJobVacanciesPositionsColumn(pool);
 
-    const hasPositionsAvailable = Object.prototype.hasOwnProperty.call(req.body, "positions_available");
+    const hasPositionsAvailable = Object.prototype.hasOwnProperty.call(
+      req.body,
+      "positions_available",
+    );
 
     // If title or description changed (or provided), re-run parsing to get required_skills
     let parsedData = {};

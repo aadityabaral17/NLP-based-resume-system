@@ -1,6 +1,7 @@
 import { Routes, Route } from "react-router-dom";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import ForgotPassword from "./pages/ForgotPassword";
 import Landing from "./pages/Landing";
 import JobSeekerDashboard from "./pages/JobSeekerDashboard";
 import OrganisationDashboard from "./pages/OrganisationDashboard";
@@ -21,6 +22,7 @@ function App() {
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
 
       {/* Job seeker only routes */}
       <Route

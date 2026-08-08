@@ -7,3 +7,8 @@ dist/
 build/
 .DS_Store
 backend/uploads/
+
+# Real credentials. Only .env.example files belong in the repository.
+.env
+.env.local
+!.env.example

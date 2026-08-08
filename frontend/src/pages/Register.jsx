@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import api from "../api/axios";
+import PasswordInput from "../components/PasswordInput";
 import jobCategoriesList from "../constants/jobCategories";
 
 function Register() {
@@ -216,8 +217,7 @@ function Register() {
 
               <div>
                 <label className={labelClass}>Password</label>
-                <input
-                  type="password"
+                <PasswordInput
                   name="password"
                   value={formData.password}
                   onChange={handleChange}
@@ -229,8 +229,7 @@ function Register() {
 
               <div>
                 <label className={labelClass}>Confirm password</label>
-                <input
-                  type="password"
+                <PasswordInput
                   name="confirmPassword"
                   value={formData.confirmPassword}
                   onChange={handleChange}

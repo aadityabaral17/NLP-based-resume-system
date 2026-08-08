@@ -337,9 +337,23 @@ function Profile() {
                 Uploaded: {new Date(cv.uploaded_at).toLocaleDateString()}
               </p>
 
+              {cv.predicted_category && (
+                <div className="mb-4">
+                  <p className="text-xs text-slate/70 mb-2">Detected field</p>
+                  <span className="text-sm bg-mist text-ink px-3 py-1.5 rounded-lg border border-line">
+                    {cv.predicted_category}
+                  </span>
+                  <p className="text-xs text-slate/70 mt-2">
+                    Used to rank the jobs we show you
+                  </p>
+                </div>
+              )}
+
               {cv.skill_entities?.length > 0 && (
                 <div className="mb-4">
-                  <p className="text-xs text-slate/70 mb-2">Extracted skills</p>
+                  <p className="text-xs text-slate/70 mb-2">
+                    Extracted skills ({cv.skill_entities.length})
+                  </p>
                   <div className="flex gap-2 flex-wrap">
                     {cv.skill_entities.map((skill, i) => (
                       <span

@@ -10,6 +10,11 @@ const {
   normalizePositionsAvailable,
   ensureJobVacanciesPositionsColumn,
 } = require("../utils/jobPosting");
+const {
+  normaliseCategory,
+  isRecommended,
+  scoreJob,
+} = require("../utils/jobRanking");
 
 // POST /api/jobs
 router.post("/", auth, async (req, res) => {
@@ -308,8 +313,15 @@ router.get("/recommended/for-me", auth, async (req, res) => {
     );
     const candidateCategory = cvResult.rows[0].predicted_category;
 
-    // Build query — filter by predicted category first to reduce comparison scope
-    let query = `
+    // The predicted category is used to RANK, not to filter.
+    //
+    // BERT decides this category, and its recall is far from perfect: measured
+    // on the test split it is 0.56 for React Developer and 0.69 for Management
+    // (see nlp-service/BERT_REPORT.md). Filtering on it meant ~44% of React
+    // developers were shown no React jobs at all — not ranked low, absent.
+    // Ranking keeps the signal without letting one wrong prediction hide
+    // everything relevant.
+    const query = `
       SELECT j.*, o.company_name
       FROM job_vacancies j
       JOIN organisations o ON j.org_id = o.org_id
@@ -317,31 +329,18 @@ router.get("/recommended/for-me", auth, async (req, res) => {
       AND j.vacancy_id NOT IN (
         SELECT vacancy_id FROM applications WHERE user_id = $1
       )
+      ORDER BY j.created_at DESC
     `;
-    const params = [user_id];
+    const jobsResult = await pool.query(query, [user_id]);
 
-    if (candidateCategory) {
-      params.push(candidateCategory.toUpperCase().replace(/[-\s]/g, ""));
-      query += ` AND UPPER(REPLACE(REPLACE(j.category, '-', ''), ' ', '')) = $${params.length}`;
-    }
+    const candidateCategoryKey = normaliseCategory(candidateCategory);
 
-    query += ` ORDER BY j.created_at DESC`;
-
-    const jobsResult = await pool.query(query, params);
-
-    // Compute quick skill-overlap score for ranking within the category
     const scoredJobs = jobsResult.rows.map((job) => {
-      const requiredSkills = (job.required_skills || []).map((s) =>
-        s.toLowerCase(),
+      const { overlap, categoryMatch, rankScore } = scoreJob(
+        job,
+        candidateSkills,
+        candidateCategoryKey,
       );
-      let overlapScore = 0;
-
-      if (requiredSkills.length > 0) {
-        const matched = requiredSkills.filter((s) =>
-          candidateSkills.includes(s),
-        );
-        overlapScore = matched.length / requiredSkills.length;
-      }
 
       return {
         vacancy_id: job.vacancy_id,
@@ -356,13 +355,15 @@ router.get("/recommended/for-me", auth, async (req, res) => {
         category: job.category,
         positions_available: job.positions_available || 1,
         created_at: job.created_at,
-        preview_score: overlapScore,
+        preview_score: overlap,
+        category_match: categoryMatch,
+        rank_score: rankScore,
       };
     });
 
     const recommended = scoredJobs
-      .filter((job) => job.preview_score >= 0.6)
-      .sort((a, b) => b.preview_score - a.preview_score)
+      .filter((job) => isRecommended(job.preview_score, job.category_match))
+      .sort((a, b) => b.rank_score - a.rank_score)
       .slice(0, 20);
 
     res.json({
@@ -408,34 +409,42 @@ router.get("/matched/for-me", auth, async (req, res) => {
     const cv = cvResult.rows[0];
     const candidateCategory = cv.predicted_category;
 
-    if (!candidateCategory) {
-      return res.json({
-        jobs: [],
-        count: 0,
-        message: "CV category not yet identified",
-      });
-    }
-
-    // Get jobs in the same category (normalized comparison), excluding already-applied ones
-    const jobsResult = await pool.query(
+    // Same reasoning as /recommended: the category ranks, it does not filter.
+    // A missing or wrong category no longer means an empty page — it just
+    // removes one ranking signal.
+    const allJobsResult = await pool.query(
       `SELECT j.*, o.company_name
        FROM job_vacancies j
        JOIN organisations o ON j.org_id = o.org_id
        WHERE j.deadline >= CURRENT_DATE
-       AND UPPER(REPLACE(REPLACE(j.category, '-', ''), ' ', '')) = $1
        AND j.vacancy_id NOT IN (
-         SELECT vacancy_id FROM applications WHERE user_id = $2
+         SELECT vacancy_id FROM applications WHERE user_id = $1
        )
-       ORDER BY j.created_at DESC
-       LIMIT 10`,
-      [candidateCategory.toUpperCase().replace(/[-\s]/g, ""), user_id],
+       ORDER BY j.created_at DESC`,
+      [user_id],
     );
+
+    // Full NLP scoring costs a round trip per job, so shortlist cheaply first
+    // (skill overlap + category bonus) and only score the best candidates.
+    const candidateCategoryKey = normaliseCategory(candidateCategory);
+    const candidateSkills = (cv.skill_entities || []).map((s) =>
+      s.toLowerCase(),
+    );
+
+    const shortlist = allJobsResult.rows
+      .map((job) => ({
+        job,
+        rank: scoreJob(job, candidateSkills, candidateCategoryKey).rankScore,
+      }))
+      .sort((a, b) => b.rank - a.rank)
+      .slice(0, 10)
+      .map((entry) => entry.job);
 
     const pythonServiceUrl =
       process.env.PYTHON_SERVICE_URL || "http://localhost:8000";
     const scoredJobs = [];
 
-    for (const job of jobsResult.rows) {
+    for (const job of shortlist) {
       try {
         const matchResponse = await axios.post(
           `${pythonServiceUrl}/api/match`,

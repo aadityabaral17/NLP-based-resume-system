@@ -1,10 +1,30 @@
+# Serving the API
 fastapi
 uvicorn
+python-multipart
+requests
+
+# Document parsing
 pdfplumber
 python-docx
+
+# NLP / ML
 spacy
 scikit-learn
-python-multipart
 sentence-transformers
 torch
 transformers
+
+# Training and evaluation scripts
+# (train_bert.py, train_model.py, evaluate_*.py)
+pandas
+datasets
+
+# After installing, download the spaCy model. main.py loads it at import time,
+# so the service will not start without it:
+#
+#     python -m spacy download en_core_web_sm
+#
+# Note: bert_label_encoder.pkl was created with scikit-learn 1.8.0. Newer
+# versions load it with an InconsistentVersionWarning. Pin scikit-learn==1.8.0
+# if you want that warning gone and guaranteed identical behaviour.

@@ -6,9 +6,32 @@ const pool = require("../config/database");
 const {
   generateOTP,
   sendOTPEmail,
+  sendPasswordResetEmail,
   saveOTP,
   verifyOTP,
 } = require("../utils/otpService");
+
+// An email belongs to either a job seeker or an organisation. Find which,
+// so password reset works for both without asking the user to pick.
+async function findAccountByEmail(email) {
+  const user = await pool.query(
+    "SELECT user_id AS id, email FROM users WHERE email = $1",
+    [email],
+  );
+  if (user.rows.length > 0) {
+    return { ...user.rows[0], table: "users", idColumn: "user_id" };
+  }
+
+  const org = await pool.query(
+    "SELECT org_id AS id, email FROM organisations WHERE email = $1",
+    [email],
+  );
+  if (org.rows.length > 0) {
+    return { ...org.rows[0], table: "organisations", idColumn: "org_id" };
+  }
+
+  return null;
+}
 
 // POST /api/auth/register
 router.post("/register", async (req, res) => {
@@ -249,6 +272,110 @@ router.post("/verify-otp", async (req, res) => {
     console.error("Verify OTP error:", error);
     res.status(500).json({
       error: { message: "Failed to verify OTP", status: 500 },
+    });
+  }
+});
+
+// POST /api/auth/forgot-password
+// Emails a reset code. Always replies with the same success message, whether
+// or not the address exists — otherwise this endpoint tells an attacker which
+// email addresses are registered.
+router.post("/forgot-password", async (req, res) => {
+  const genericResponse = {
+    message:
+      "If that email is registered, a reset code has been sent to it.",
+  };
+
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        error: { message: "Email is required", status: 400 },
+      });
+    }
+
+    const account = await findAccountByEmail(email);
+    if (!account) {
+      return res.json(genericResponse);
+    }
+
+    const otp = generateOTP();
+    await saveOTP(email, otp, "reset");
+
+    try {
+      await sendPasswordResetEmail(email, otp);
+    } catch (mailError) {
+      // The code is saved but could not be delivered. Say so plainly rather
+      // than leaving someone waiting for an email that will never arrive.
+      console.error("Password reset email failed:", mailError.message);
+      return res.status(502).json({
+        error: {
+          message: "Could not send the reset email. Please try again later.",
+          status: 502,
+        },
+      });
+    }
+
+    res.json(genericResponse);
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    res.status(500).json({
+      error: { message: "Failed to start password reset", status: 500 },
+    });
+  }
+});
+
+// POST /api/auth/reset-password
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { email, otp, new_password } = req.body;
+
+    if (!email || !otp || !new_password) {
+      return res.status(400).json({
+        error: {
+          message: "Email, code and new password are required",
+          status: 400,
+        },
+      });
+    }
+
+    if (String(new_password).length < 6) {
+      return res.status(400).json({
+        error: {
+          message: "Password must be at least 6 characters",
+          status: 400,
+        },
+      });
+    }
+
+    const account = await findAccountByEmail(email);
+    if (!account) {
+      // The code could never be valid for an unknown address; the same
+      // message as a wrong code keeps registered emails private.
+      return res.status(400).json({
+        error: { message: "Invalid or expired code", status: 400 },
+      });
+    }
+
+    const result = await verifyOTP(email, otp, "reset");
+    if (!result.success) {
+      return res.status(400).json({
+        error: { message: "Invalid or expired code", status: 400 },
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(new_password, 10);
+    await pool.query(
+      `UPDATE ${account.table} SET password = $1 WHERE ${account.idColumn} = $2`,
+      [hashedPassword, account.id],
+    );
+
+    res.json({ message: "Password reset successfully. You can now log in." });
+  } catch (error) {
+    console.error("Reset password error:", error);
+    res.status(500).json({
+      error: { message: "Failed to reset password", status: 500 },
     });
   }
 });

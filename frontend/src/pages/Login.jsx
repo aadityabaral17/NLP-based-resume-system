@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import api from "../api/axios";
 import { useAuth } from "../context/AuthContext";
+import PasswordInput from "../components/PasswordInput";
 
 function Login() {
   const [formData, setFormData] = useState({ email: "", password: "" });
@@ -10,6 +11,10 @@ function Login() {
 
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // e.g. "Password reset. Please sign in." after a successful reset
+  const notice = location.state?.message;
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -55,6 +60,12 @@ function Login() {
             Sign in to continue to your dashboard
           </p>
 
+          {notice && !error && (
+            <div className="bg-mist text-slate text-sm px-4 py-3 rounded-lg mb-5 border border-line">
+              {notice}
+            </div>
+          )}
+
           {error && (
             <div className="bg-danger-light text-danger text-sm px-4 py-3 rounded-lg mb-5">
               {error}
@@ -80,11 +91,18 @@ function Login() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-ink mb-1.5">
-                Password
-              </label>
-              <input
-                type="password"
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-sm font-medium text-ink">
+                  Password
+                </label>
+                <Link
+                  to="/forgot-password"
+                  className="text-sm text-indigo hover:underline"
+                >
+                  Forgot password?
+                </Link>
+              </div>
+              <PasswordInput
                 name="password"
                 value={formData.password}
                 onChange={handleChange}

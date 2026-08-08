@@ -1,13 +1,4 @@
-const nodemailer = require("nodemailer");
-
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
-
+const { transporter, FROM } = require("./mailer");
 const sendMatchNotification = async (
   candidateEmail,
   candidateName,
@@ -23,7 +14,7 @@ const sendMatchNotification = async (
       : "None — great match!";
 
   const mailOptions = {
-    from: process.env.SMTP_USER,
+    from: FROM,
     to: candidateEmail,
     subject: `You matched ${scorePercent}% for ${jobTitle} at ${companyName}`,
     html: `
@@ -83,7 +74,7 @@ const sendShortlistNotification = async (
   companyName,
 ) => {
   const mailOptions = {
-    from: process.env.SMTP_USER,
+    from: FROM,
     to: candidateEmail,
     subject: `You've been shortlisted for ${jobTitle} at ${companyName}`,
     html: `

@@ -235,6 +235,72 @@ router.get("/user", auth, async (req, res) => {
   }
 });
 
+// GET /api/match/candidates/:match_id/explanation
+// Plain-language reason for a match score, for the hiring team. Generated on
+// demand rather than with the candidate list, because it costs a second or two
+// per candidate and most rows are never expanded.
+router.get("/candidates/:match_id/explanation", auth, async (req, res) => {
+  try {
+    const { id: org_id, user_type } = req.user;
+    const { match_id } = req.params;
+
+    if (user_type !== "organisation") {
+      return res.status(403).json({
+        error: {
+          message: "Only organisations can view match explanations",
+          status: 403,
+        },
+      });
+    }
+
+    // the job must belong to this organisation
+    const detailsQuery = `
+      SELECT mr.composite_score, mr.missing_skills,
+             j.title, j.required_skills,
+             c.skill_entities
+      FROM match_results mr
+      JOIN job_vacancies j ON mr.vacancy_id = j.vacancy_id
+      LEFT JOIN cvs c ON c.user_id = mr.user_id
+      WHERE mr.match_id = $1 AND j.org_id = $2
+    `;
+    const result = await pool.query(detailsQuery, [match_id, org_id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: { message: "Match not found or access denied", status: 404 },
+      });
+    }
+
+    const row = result.rows[0];
+    const requiredSkills = (row.required_skills || []).map((s) =>
+      String(s).toLowerCase(),
+    );
+    const candidateSkills = new Set(
+      (row.skill_entities || []).map((s) => String(s).toLowerCase()),
+    );
+    const matchedSkills = requiredSkills.filter((s) => candidateSkills.has(s));
+
+    const pythonServiceUrl =
+      process.env.PYTHON_SERVICE_URL || "http://localhost:8000";
+    const response = await axios.post(`${pythonServiceUrl}/api/explain-match`, {
+      job_title: row.title,
+      score: row.composite_score || 0,
+      matched_skills: matchedSkills,
+      missing_skills: row.missing_skills || [],
+    });
+
+    res.json({
+      explanation: response.data.explanation,
+      source: response.data.source,
+    });
+  } catch (error) {
+    console.error("Error explaining match:", error.message);
+    res.status(500).json({
+      error: { message: "Error generating explanation", status: 500 },
+    });
+  }
+});
+
 // PATCH /api/match/candidates/:match_id/status
 router.patch("/candidates/:match_id/status", auth, async (req, res) => {
   try {

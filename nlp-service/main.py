@@ -11,6 +11,9 @@ import requests
 import torch
 from transformers import BertTokenizer, BertForSequenceClassification
 
+import llm_client
+import llm_tasks
+
 app = FastAPI()
 
 # ─── Load models ─────────────────────────────────────
@@ -284,7 +287,11 @@ def semantic_similarity(text1: str, text2: str) -> float:
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "model": "sentence-transformers + fine-tuned BERT"}
+    return {
+        "status": "ok",
+        "model": "sentence-transformers + fine-tuned BERT",
+        "llm": llm_client.info(),
+    }
 
 @app.post("/api/parse/cv")
 async def parse_resume(file: UploadFile = File(...)):
@@ -292,18 +299,57 @@ async def parse_resume(file: UploadFile = File(...)):
     if not (file.filename.endswith(".pdf") or file.filename.endswith(".docx")):
         return {"error": "Only PDF or DOCX files supported"}
 
-    raw_text = extract_text_from_file(contents, file.filename)
+    # A corrupt or password-protected file makes pdfplumber/python-docx raise,
+    # which would surface to the user as a bare 500. Report it as a readable
+    # error instead; the caller turns this into a 400 and leaves any existing
+    # CV untouched.
+    try:
+        raw_text = extract_text_from_file(contents, file.filename)
+    except Exception as exc:
+        print(f"[parse] could not read {file.filename}: {exc}")
+        return {
+            "error": (
+                "That file could not be read. It may be corrupted, "
+                "password-protected, or a scanned image with no text."
+            )
+        }
+
+    if not raw_text.strip():
+        return {
+            "error": (
+                "No text was found in that file. Scanned or image-only PDFs "
+                "are not supported — please upload a text-based PDF or a DOCX."
+            )
+        }
+
     cleaned_text = clean_text(raw_text)
-    skills = extract_skills(raw_text)
+    skills_from_list = extract_skills(raw_text)
     entities = extract_entities(raw_text)
     category = classify_resume(raw_text)
     sections = extract_sections(raw_text)
+
+    # The fixed SKILLS_LIST can only ever find the 80 skills written into it.
+    # The LLM finds the rest, and every skill it returns is checked against the
+    # CV text before being accepted. If the LLM is unavailable we simply keep
+    # the classical result — this endpoint must never depend on it.
+    skills_from_llm = llm_tasks.extract_skills(raw_text, entities.get("names"))
+    if skills_from_llm:
+        # normalise through SKILL_ALIASES so the model answering "nodejs" and
+        # the fixed list answering "node" do not both survive the union
+        merged = set(skills_from_list) | {normalize_skill(s) for s in skills_from_llm}
+        skills = sorted(merged)
+        skills_source = "list+llm"
+    else:
+        skills = skills_from_list
+        skills_source = "list"
 
     return {
         "filename": file.filename,
         "raw_text": raw_text,
         "cleaned_text": cleaned_text,
         "skills": skills,
+        "skills_source": skills_source,
+        "skills_from_list": skills_from_list,
         "entities": entities,
         "predicted_category": category,
         "sections": {
@@ -321,11 +367,30 @@ async def parse_job(data: dict):
     title = data.get("title", "")
     full_text = description + " " + title
     cleaned = clean_text(full_text)
-    skills = extract_skills(full_text)
+    skills_from_list = extract_skills(full_text)
+
+    # Jobs must be read the same way CVs are — see the note in llm_tasks.parse_job.
+    parsed = llm_tasks.parse_job(title, description)
+    if parsed:
+        # normalise so "nodejs" and "node" do not both count in the
+        # skill_overlap denominator
+        merged = set(skills_from_list) | {
+            normalize_skill(s) for s in parsed["required_skills"]
+        }
+        skills = sorted(merged)[:12]
+        experience_level = parsed["experience_level"] or "Entry Level"
+        source = "list+llm"
+    else:
+        skills = skills_from_list
+        experience_level = "Entry Level"
+        source = "list"
+
     return {
         "required_skills": skills,
-        "experience_level": "Entry Level",
-        "cleaned_text": cleaned
+        "experience_level": experience_level,
+        "cleaned_text": cleaned,
+        "skills_source": source,
+        "skills_from_list": skills_from_list,
     }
 
 @app.post("/api/match")
@@ -368,7 +433,9 @@ async def match_cv_job(data: dict):
         skill_overlap  = 1.0
         missing_skills = []
 
-    composite_score = (section_score * 0.40) + (skill_overlap * 0.60)
+    # Cosine similarity can come out slightly negative for unrelated documents,
+    # which would surface as a negative percentage in the UI. Clamp to 0-1.
+    composite_score = max(0.0, min(1.0, (section_score * 0.40) + (skill_overlap * 0.60)))
     is_eligible     = composite_score >= 0.65
 
     return {
@@ -434,7 +501,10 @@ async def match_batch(files: list[UploadFile] = File(...), job_description: str 
                 skill_overlap = 1.0
                 missing_skills = []
 
-            composite_score = (section_score * 0.40) + (skill_overlap * 0.60)
+            # clamped for the same reason as in /api/match above
+            composite_score = max(
+                0.0, min(1.0, (section_score * 0.40) + (skill_overlap * 0.60))
+            )
 
             results.append({
                 "filename": file.filename,
@@ -455,3 +525,84 @@ async def match_batch(files: list[UploadFile] = File(...), job_description: str 
     results.sort(key=lambda r: r.get("final_score", -1), reverse=True)
 
     return {"results": results, "count": len(results)}
+
+
+# ─── LLM endpoints ────────────────────────────────────
+# These are the only endpoints that use the language model. Each one falls
+# back to a non-LLM answer when LM Studio is not running, so the service keeps
+# working without it.
+
+@app.post("/api/career-tips")
+async def career_tips(data: dict):
+    """Career advice for one job seeker.
+
+    backend/routes/recommendations.js already calls this endpoint.
+    """
+    category = data.get("category", "General")
+    cv_skills = data.get("cv_skills", [])
+    missing_skills = data.get("missing_skills", [])
+    top_matches = data.get("top_matches", [])
+
+    tips = llm_tasks.career_tips(category, cv_skills, missing_skills, top_matches)
+    if tips:
+        return {"ai_tips": tips, "source": "llm"}
+
+    # LLM unavailable — build something useful from the data we already have
+    missing_summary = ", ".join(missing_skills[:5]) if missing_skills else "none identified"
+    titles = [m.get("job_title", "") for m in (top_matches or [])[:3] if m.get("job_title")]
+    matches_summary = ", ".join(titles) if titles else "roles in your category"
+
+    return {
+        "source": "fallback",
+        "ai_tips": [
+            {
+                "title": "Skill Development",
+                "bullets": [
+                    f"Focus on the skills you are missing most often: {missing_summary}",
+                    "Build one small project that uses them and add it to your CV",
+                ],
+            },
+            {
+                "title": "Job Search Strategy",
+                "bullets": [
+                    f"Target roles similar to: {matches_summary}",
+                    "Put your strongest matching skills at the top of your CV",
+                ],
+            },
+            {
+                "title": "Career Growth",
+                "bullets": [
+                    "Set a three month goal to close your biggest skill gap",
+                    f"Follow companies hiring in {category} to track in-demand skills",
+                ],
+            },
+        ],
+    }
+
+
+@app.post("/api/explain-match")
+async def explain_match(data: dict):
+    """Plain-language reason for a match score, for the hiring team."""
+    job_title = data.get("job_title", "")
+    score = data.get("score", 0)
+    matched_skills = data.get("matched_skills", [])
+    missing_skills = data.get("missing_skills", [])
+    section_scores = data.get("section_scores")
+
+    explanation = llm_tasks.explain_match(
+        job_title, score, matched_skills, missing_skills, section_scores
+    )
+    if explanation:
+        return {"explanation": explanation, "source": "llm"}
+
+    return {
+        "source": "fallback",
+        "explanation": {
+            "summary": (
+                f"Matched {len(matched_skills)} of "
+                f"{len(matched_skills) + len(missing_skills)} required skills."
+            ),
+            "strengths": list(matched_skills)[:3],
+            "gaps": list(missing_skills)[:3],
+        },
+    }

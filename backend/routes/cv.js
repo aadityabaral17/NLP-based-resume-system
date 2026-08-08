@@ -28,16 +28,21 @@ const upload = multer({
     fileSize: parseInt(process.env.MAX_FILE_SIZE) || 5242880, // 5MB default
   },
   fileFilter: (req, file, cb) => {
-    const allowedTypes = [".pdf", ".docx", ".txt"];
+    // Must match what the parser can actually read. nlp-service only handles
+    // PDF and DOCX — .txt used to be accepted here, was then rejected by the
+    // parser, and the empty result overwrote the user's existing CV.
+    const allowedTypes = [".pdf", ".docx"];
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowedTypes.includes(ext)) {
       cb(null, true);
     } else {
-      cb(
-        new Error(
-          "Invalid file type. Only PDF, DOCX, and TXT files are allowed.",
-        ),
+      // without an explicit status the global handler reports this as a 500,
+      // which reads like a server fault rather than a bad upload
+      const error = new Error(
+        "Invalid file type. Only PDF and DOCX files are allowed.",
       );
+      error.status = 400;
+      cb(error);
     }
   },
 });
@@ -86,6 +91,22 @@ router.post("/upload", auth, upload.single("cv_file"), async (req, res) => {
     );
 
     const parsedData = response.data;
+
+    // The parser reports unreadable files in the response body rather than as
+    // an HTTP error. Without this check the undefined fields below are written
+    // straight over the user's existing CV by ON CONFLICT DO UPDATE — the
+    // upload reports success while destroying the record it replaced.
+    if (parsedData.error || !parsedData.raw_text || !parsedData.raw_text.trim()) {
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({
+        error: {
+          message:
+            parsedData.error ||
+            "No text could be read from that file. If it is a scanned PDF, try a text-based PDF or a DOCX.",
+          status: 400,
+        },
+      });
+    }
 
     // Save CV to database
     const query = `

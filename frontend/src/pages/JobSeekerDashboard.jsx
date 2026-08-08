@@ -5,6 +5,7 @@ import api from "../api/axios";
 import jobCategories from "../constants/jobCategories";
 import ScoreDial from "../components/ScoreDial";
 import StatusBadge from "../components/StatusBadge";
+import CareerTips from "../components/CareerTips";
 import DashboardSidebar, {
   GridIcon,
   ClipboardCheckIcon,
@@ -372,7 +373,7 @@ function JobSeekerDashboard() {
   ).length;
 
   return (
-    <div className="min-h-screen bg-mist flex">
+    <div className="min-h-screen bg-mist flex flex-col lg:flex-row">
       <DashboardSidebar
         logoSubtitle="Career intelligence workspace"
         initials={initials}
@@ -509,6 +510,8 @@ function JobSeekerDashboard() {
                   </div>
                 </div>
               </div>
+
+              {hasCV && <CareerTips />}
 
               <div>
                 <div className="flex items-center justify-between gap-3 mb-4">

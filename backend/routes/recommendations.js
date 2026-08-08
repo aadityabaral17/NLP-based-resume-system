@@ -3,6 +3,11 @@ const router = express.Router();
 const auth = require("../middleware/auth");
 const pool = require("../config/database");
 const axios = require("axios");
+const {
+  buildTipsCacheKey,
+  serialiseTips,
+  readCachedTips,
+} = require("../utils/careerTipsCache");
 
 // GET /api/recommendations/career-tips — AI-generated tips for logged in job seeker
 router.get("/career-tips", auth, async (req, res) => {
@@ -16,7 +21,8 @@ router.get("/career-tips", auth, async (req, res) => {
     }
 
     const cvResult = await pool.query(
-      "SELECT predicted_category FROM cvs WHERE user_id = $1 ORDER BY uploaded_at DESC LIMIT 1",
+      `SELECT cv_id, predicted_category, skill_entities, career_tips
+       FROM cvs WHERE user_id = $1 ORDER BY uploaded_at DESC LIMIT 1`,
       [user_id],
     );
 
@@ -24,7 +30,9 @@ router.get("/career-tips", auth, async (req, res) => {
       return res.json({ top_matches: [], ai_tips: [] });
     }
 
-    const category = cvResult.rows[0].predicted_category || "General";
+    const cv = cvResult.rows[0];
+    const category = cv.predicted_category || "General";
+    const cvSkills = cv.skill_entities || [];
 
     const matchQuery = `
       SELECT mr.*, j.title, o.company_name 
@@ -51,20 +59,60 @@ router.get("/career-tips", auth, async (req, res) => {
       match_score: match.composite_score,
     }));
 
+    const missingSkills = Array.from(allMissingSkills);
+
+    // Generating tips costs several seconds of local LLM time, and the answer
+    // only changes when these inputs change. Serve the stored copy whenever the
+    // fingerprint still matches.
+    const cacheKey = buildTipsCacheKey({
+      category,
+      cvSkills,
+      missingSkills,
+      topMatches,
+    });
+
+    const cachedTips = readCachedTips(cv.career_tips, cacheKey);
+    if (cachedTips) {
+      return res.json({
+        top_matches: topMatches,
+        ai_tips: cachedTips,
+        cached: true,
+      });
+    }
+
     const pythonServiceUrl =
       process.env.PYTHON_SERVICE_URL || "http://localhost:8000";
     const tipsResponse = await axios.post(
       `${pythonServiceUrl}/api/career-tips`,
       {
         category,
-        missing_skills: Array.from(allMissingSkills),
+        cv_skills: cvSkills,
+        missing_skills: missingSkills,
         top_matches: topMatches,
       },
     );
 
+    const aiTips = tipsResponse.data.ai_tips;
+
+    // Only cache real LLM output. The Python service falls back to generic
+    // tips when LM Studio is not running, and storing those would mean the
+    // candidate keeps seeing the fallback long after the model is back.
+    if (tipsResponse.data.source === "llm" && Array.isArray(aiTips) && aiTips.length) {
+      try {
+        await pool.query(
+          "UPDATE cvs SET career_tips = $1 WHERE cv_id = $2",
+          [serialiseTips(cacheKey, aiTips), cv.cv_id],
+        );
+      } catch (cacheError) {
+        // a failed cache write must not fail the request
+        console.error("Could not cache career tips:", cacheError.message);
+      }
+    }
+
     res.json({
       top_matches: topMatches,
-      ai_tips: tipsResponse.data.ai_tips,
+      ai_tips: aiTips,
+      cached: false,
     });
   } catch (error) {
     console.error("Error generating career tips:", error);

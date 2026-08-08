@@ -46,10 +46,16 @@ app.use("/api/batch", require("./routes/batch"));
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(err.status || 500).json({
+
+  // multer signals upload problems (file too large, too many files) with a
+  // LIMIT_* code and no status; these are bad requests, not server faults
+  const status =
+    err.status || (typeof err.code === "string" && err.code.startsWith("LIMIT_") ? 400 : 500);
+
+  res.status(status).json({
     error: {
       message: err.message || "Internal Server Error",
-      status: err.status || 500,
+      status,
     },
   });
 });

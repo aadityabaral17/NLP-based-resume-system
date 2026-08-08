@@ -4,6 +4,7 @@ import { useAuth } from "../context/AuthContext";
 import api from "../api/axios";
 import ScoreDial from "../components/ScoreDial";
 import StatusBadge from "../components/StatusBadge";
+import MatchExplanation from "../components/MatchExplanation";
 import DashboardSidebar, {
   GridIcon,
   BriefcaseIcon,
@@ -477,6 +478,7 @@ function OrganisationDashboard() {
                       </button>
                     )}
                   </div>
+                  <MatchExplanation matchId={candidate.match_id} />
                 </div>
                 <ScoreDial score={candidate.composite_score * 100} />
               </div>
@@ -517,7 +519,7 @@ function OrganisationDashboard() {
   );
 
   return (
-    <div className="min-h-screen bg-mist flex">
+    <div className="min-h-screen bg-mist flex flex-col lg:flex-row">
       <DashboardSidebar
         logoSubtitle="Hiring command center"
         initials={initials}

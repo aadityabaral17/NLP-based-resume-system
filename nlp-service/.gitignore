@@ -6,3 +6,6 @@ bert_checkpoints/
 bert_logs/
 data/ResumeAtlas.csv
 bert_label_encoder.pkl
+
+# Lemmatised-text cache written by evaluate_svm_baseline.py (46 MB, regenerable)
+data/ResumeAtlas_cleaned.csv

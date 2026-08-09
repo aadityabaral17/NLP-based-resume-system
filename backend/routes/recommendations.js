@@ -8,6 +8,7 @@ const {
   serialiseTips,
   readCachedTips,
 } = require("../utils/careerTipsCache");
+const { buildFallbackTips } = require("../utils/careerTipsFallback");
 
 // GET /api/recommendations/career-tips — AI-generated tips for logged in job seeker
 router.get("/career-tips", auth, async (req, res) => {
@@ -82,22 +83,50 @@ router.get("/career-tips", auth, async (req, res) => {
 
     const pythonServiceUrl =
       process.env.PYTHON_SERVICE_URL || "http://localhost:8000";
-    const tipsResponse = await axios.post(
-      `${pythonServiceUrl}/api/career-tips`,
-      {
+
+    // The NLP service being unreachable must not cost the candidate their
+    // guidance. Anything that goes wrong here falls back to tips built from
+    // data we already hold, so this endpoint always answers with something
+    // useful instead of an error the page has to render as "unavailable".
+    let aiTips = null;
+    let source = "fallback";
+
+    try {
+      const tipsResponse = await axios.post(
+        `${pythonServiceUrl}/api/career-tips`,
+        {
+          category,
+          cv_skills: cvSkills,
+          missing_skills: missingSkills,
+          top_matches: topMatches,
+        },
+        { timeout: 60000 },
+      );
+
+      if (Array.isArray(tipsResponse.data.ai_tips) && tipsResponse.data.ai_tips.length) {
+        aiTips = tipsResponse.data.ai_tips;
+        source = tipsResponse.data.source || "llm";
+      }
+    } catch (serviceError) {
+      console.error(
+        "Career tips service unavailable, using fallback:",
+        serviceError.message,
+      );
+    }
+
+    if (!aiTips) {
+      aiTips = buildFallbackTips({
         category,
-        cv_skills: cvSkills,
-        missing_skills: missingSkills,
-        top_matches: topMatches,
-      },
-    );
+        cvSkills,
+        missingSkills,
+        topMatches,
+      });
+      source = "fallback";
+    }
 
-    const aiTips = tipsResponse.data.ai_tips;
-
-    // Only cache real LLM output. The Python service falls back to generic
-    // tips when LM Studio is not running, and storing those would mean the
-    // candidate keeps seeing the fallback long after the model is back.
-    if (tipsResponse.data.source === "llm" && Array.isArray(aiTips) && aiTips.length) {
+    // Only cache real LLM output. Caching a fallback would leave the candidate
+    // looking at generic advice long after the model came back.
+    if (source === "llm") {
       try {
         await pool.query(
           "UPDATE cvs SET career_tips = $1 WHERE cv_id = $2",
@@ -113,6 +142,7 @@ router.get("/career-tips", auth, async (req, res) => {
       top_matches: topMatches,
       ai_tips: aiTips,
       cached: false,
+      source,
     });
   } catch (error) {
     console.error("Error generating career tips:", error);

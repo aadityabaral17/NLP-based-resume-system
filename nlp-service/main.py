@@ -393,6 +393,128 @@ async def parse_job(data: dict):
         "skills_from_list": skills_from_list,
     }
 
+def _cosine(a, b) -> float:
+    """Cosine similarity between two precomputed vectors."""
+    return float(cosine_similarity([a], [b])[0][0])
+
+
+def _score_against(cv_vectors, cv_skills_lower, weights, job_description,
+                   job_vector, required_skills):
+    """Score one vacancy using vectors that have already been computed.
+
+    Kept separate from /api/match so a whole list of vacancies can be scored
+    without re-encoding the candidate's CV for every one of them. A section the
+    CV does not contain scores 0.0, exactly as semantic_similarity does when
+    given an empty string — the result must match /api/match to the decimal.
+    """
+    def sim(name):
+        vector = cv_vectors.get(name)
+        return 0.0 if vector is None else _cosine(vector, job_vector)
+
+    skills_sim   = sim("skills")
+    projects_sim = sim("projects")
+    exp_sim      = sim("experience")
+    summary_sim  = sim("summary")
+    full_sim     = sim("full")
+
+    section_score = (
+        skills_sim   * weights["skills"] +
+        projects_sim * weights["projects"] +
+        exp_sim      * weights["experience"] +
+        summary_sim  * weights["summary"]
+    )
+    if section_score < 0.01:
+        section_score = full_sim
+
+    required_skills_lower = [normalize_skill(s) for s in (required_skills or [])]
+    if required_skills_lower:
+        matched = [s for s in required_skills_lower if s in cv_skills_lower]
+        skill_overlap = len(matched) / len(required_skills_lower)
+        missing_skills = [s for s in required_skills_lower if s not in cv_skills_lower]
+    else:
+        skill_overlap = 1.0
+        missing_skills = []
+
+    composite = max(0.0, min(1.0, (section_score * 0.40) + (skill_overlap * 0.60)))
+
+    return {
+        "cosine_similarity": float(full_sim),
+        "section_scores": {
+            "skills": float(skills_sim),
+            "projects": float(projects_sim),
+            "experience": float(exp_sim),
+            "summary": float(summary_sim),
+        },
+        "section_score": float(section_score),
+        "skill_overlap": float(skill_overlap),
+        "final_score": float(composite),
+        "missing_skills": missing_skills,
+        "is_eligible": bool(composite >= 0.65),
+    }
+
+
+@app.post("/api/match/bulk")
+async def match_cv_many_jobs(data: dict):
+    """Score one CV against many vacancies in a single request.
+
+    Scoring each vacancy through /api/match repeats a great deal of work: the
+    candidate's four CV sections and full text are re-encoded for every
+    vacancy, the vacancy text is encoded once per section, and BERT reclassifies
+    the same CV each time. Ten vacancies cost roughly one hundred encodings and
+    ten classifications when fifteen encodings and one classification suffice.
+
+    Here the CV is encoded once, each vacancy description once, and the stored
+    category is reused when the caller supplies it. That makes it affordable to
+    score every open vacancy rather than a shortlist, so a strong match can no
+    longer be missed because it fell outside an arbitrary cut-off.
+    """
+    cv_text = data.get("cv_text", "")
+    cv_skills = data.get("skills", [])
+    jobs = data.get("jobs", []) or []
+    category = data.get("cv_category")
+
+    if not cv_text.strip() or not jobs:
+        return {"results": [], "count": 0}
+
+    # classify only when the caller does not already know the category
+    if not category:
+        category = classify_resume(cv_text)
+    weights = get_section_weights(category)
+
+    sections = extract_sections(cv_text)
+    section_texts = {
+        "skills": sections["skills"],
+        "projects": sections["projects"],
+        "experience": sections["experience"],
+        "summary": sections["summary"],
+        "full": cv_text,
+    }
+
+    # only encode sections the CV actually has; a missing one scores 0.0, which
+    # is what semantic_similarity returns for empty input
+    present = [k for k, v in section_texts.items() if v and v.strip()]
+    cv_vectors = {}
+    if present:
+        encoded = sentence_model.encode([section_texts[k] for k in present])
+        cv_vectors = dict(zip(present, encoded))
+
+    descriptions = [str(j.get("description") or "") for j in jobs]
+    job_encoded = sentence_model.encode(descriptions)
+
+    cv_skills_lower = expand_implied_skills(cv_skills)
+
+    results = []
+    for job, job_vector, description in zip(jobs, job_encoded, descriptions):
+        scored = _score_against(
+            cv_vectors, cv_skills_lower, weights,
+            description, job_vector, job.get("required_skills"),
+        )
+        scored["vacancy_id"] = job.get("vacancy_id")
+        results.append(scored)
+
+    return {"results": results, "count": len(results), "cv_category": category}
+
+
 @app.post("/api/match")
 async def match_cv_job(data: dict):
     cv_text          = data.get("cv_text", "")

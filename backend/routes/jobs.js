@@ -425,41 +425,98 @@ router.get("/matched/for-me", auth, async (req, res) => {
       [user_id],
     );
 
-    // Full NLP scoring costs a round trip per job, so shortlist cheaply first
-    // (skill overlap + category bonus) and only score the best candidates.
+    // Every open vacancy is scored, not a shortlist.
+    //
+    // Scoring used to run one request per vacancy, which re-encoded the CV and
+    // reclassified it every time, so only the ten best on a cheap pre-rank could
+    // be afforded. That cheap rank does not agree with the full score — it has
+    // no semantic similarity term — so a vacancy the full model would have
+    // ranked highly could be dropped before it was ever scored.
+    //
+    // /api/match/bulk encodes the CV once and each description once, which is
+    // fast enough to score everything and removes that failure mode. The cap
+    // below is only a safety valve for an unexpectedly large board.
+    const MAX_SCORED = 100;
     const candidateCategoryKey = normaliseCategory(candidateCategory);
     const candidateSkills = (cv.skill_entities || []).map((s) =>
       s.toLowerCase(),
     );
 
-    const shortlist = allJobsResult.rows
-      .map((job) => ({
-        job,
-        rank: scoreJob(job, candidateSkills, candidateCategoryKey).rankScore,
-      }))
-      .sort((a, b) => b.rank - a.rank)
-      .slice(0, 10)
-      .map((entry) => entry.job);
+    let shortlist = allJobsResult.rows;
+    if (shortlist.length > MAX_SCORED) {
+      shortlist = shortlist
+        .map((job) => ({
+          job,
+          rank: scoreJob(job, candidateSkills, candidateCategoryKey).rankScore,
+        }))
+        .sort((a, b) => b.rank - a.rank)
+        .slice(0, MAX_SCORED)
+        .map((entry) => entry.job);
+    }
 
     const pythonServiceUrl =
       process.env.PYTHON_SERVICE_URL || "http://localhost:8000";
-    const scoredJobs = [];
+    let scoredJobs = [];
 
-    for (const job of shortlist) {
-      try {
-        const matchResponse = await axios.post(
-          `${pythonServiceUrl}/api/match`,
-          {
-            cv_text: cv.extracted_text,
-            skills: cv.skill_entities,
-            job_description: job.description,
+    try {
+      // one request for the whole board; passing the stored category saves the
+      // NLP service reclassifying a CV it has already classified
+      const bulkResponse = await axios.post(
+        `${pythonServiceUrl}/api/match/bulk`,
+        {
+          cv_text: cv.extracted_text,
+          skills: cv.skill_entities,
+          cv_category: candidateCategory || undefined,
+          jobs: shortlist.map((job) => ({
+            vacancy_id: job.vacancy_id,
+            description: job.description,
             required_skills: job.required_skills || [],
-          },
-        );
+          })),
+        },
+        { timeout: 120000 },
+      );
 
-        const matchResult = matchResponse.data;
+      const byId = new Map(
+        (bulkResponse.data.results || []).map((r) => [r.vacancy_id, r]),
+      );
 
-        scoredJobs.push({
+      scoredJobs = shortlist
+        .filter((job) => byId.has(job.vacancy_id))
+        .map((job) => {
+          const m = byId.get(job.vacancy_id);
+          return {
+            vacancy_id: job.vacancy_id,
+            org_id: job.org_id,
+            company_name: job.company_name,
+            title: job.title,
+            description: job.description,
+            required_skills: job.required_skills || [],
+            experience_level: job.experience_level,
+            employment_type: job.employment_type,
+            deadline: job.deadline,
+            category: job.category,
+            created_at: job.created_at,
+            match_score: m.final_score,
+            // the list is ranked rather than filtered, so a weak match can
+            // legitimately appear; label it rather than hiding it
+            match_quality: matchQuality(m.final_score),
+            missing_skills: m.missing_skills,
+            is_eligible: m.is_eligible,
+          };
+        });
+    } catch (matchError) {
+      // The NLP service being down must not empty the page. Fall back to the
+      // vacancies themselves, ordered by the cheap skill overlap, with no
+      // score shown rather than a misleading one.
+      console.error("Bulk match failed, returning unscored:", matchError.message);
+      scoredJobs = shortlist
+        .map((job) => ({
+          job,
+          rank: scoreJob(job, candidateSkills, candidateCategoryKey).rankScore,
+        }))
+        .sort((a, b) => b.rank - a.rank)
+        .slice(0, 20)
+        .map(({ job }) => ({
           vacancy_id: job.vacancy_id,
           org_id: job.org_id,
           company_name: job.company_name,
@@ -471,22 +528,14 @@ router.get("/matched/for-me", auth, async (req, res) => {
           deadline: job.deadline,
           category: job.category,
           created_at: job.created_at,
-          match_score: matchResult.final_score,
-          // this list is no longer filtered by category, so a weak match can
-          // appear here; label it rather than hiding it
-          match_quality: matchQuality(matchResult.final_score),
-          missing_skills: matchResult.missing_skills,
-          is_eligible: matchResult.is_eligible,
-        });
-      } catch (matchError) {
-        console.error(
-          `Error scoring job ${job.vacancy_id}:`,
-          matchError.message,
-        );
-      }
+          match_score: undefined,
+          match_quality: undefined,
+          missing_skills: [],
+          is_eligible: false,
+        }));
     }
 
-    scoredJobs.sort((a, b) => b.match_score - a.match_score);
+    scoredJobs.sort((a, b) => (b.match_score ?? -1) - (a.match_score ?? -1));
 
     res.json({
       jobs: scoredJobs,

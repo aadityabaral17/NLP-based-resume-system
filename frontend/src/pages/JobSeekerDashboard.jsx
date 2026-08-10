@@ -191,14 +191,24 @@ function JobSeekerDashboard() {
               </span>
             )}
             {showFit && job.match_score !== undefined && (
+              // This list is ranked rather than filtered, so a weak match can
+              // legitimately appear. Colour and word it honestly instead of
+              // presenting every result as a match.
               <span
                 className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                  job.is_eligible
+                  job.match_quality === "strong"
                     ? "bg-success-light text-success"
-                    : "bg-amber-light text-amber"
+                    : job.match_quality === "moderate"
+                      ? "bg-amber-light text-amber"
+                      : "bg-mist text-slate border border-line"
                 }`}
               >
-                {Math.round(job.match_score * 100)}% match
+                {Math.round(job.match_score * 100)}%
+                {job.match_quality === "strong"
+                  ? " strong match"
+                  : job.match_quality === "moderate"
+                    ? " partial match"
+                    : " weak match"}
               </span>
             )}
           </div>
@@ -516,7 +526,7 @@ function JobSeekerDashboard() {
               <div>
                 <div className="flex items-center justify-between gap-3 mb-4">
                   <h3 className="font-serif text-lg text-ink">
-                    Jobs matching your profile
+                    Jobs ranked for you
                   </h3>
                   {candidateCategory && (
                     <span className="text-sm text-amber">

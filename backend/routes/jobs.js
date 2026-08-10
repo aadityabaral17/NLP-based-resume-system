@@ -15,6 +15,7 @@ const {
   isRecommended,
   scoreJob,
 } = require("../utils/jobRanking");
+const { matchQuality } = require("../utils/matchQuality");
 
 // POST /api/jobs
 router.post("/", auth, async (req, res) => {
@@ -471,6 +472,9 @@ router.get("/matched/for-me", auth, async (req, res) => {
           category: job.category,
           created_at: job.created_at,
           match_score: matchResult.final_score,
+          // this list is no longer filtered by category, so a weak match can
+          // appear here; label it rather than hiding it
+          match_quality: matchQuality(matchResult.final_score),
           missing_skills: matchResult.missing_skills,
           is_eligible: matchResult.is_eligible,
         });

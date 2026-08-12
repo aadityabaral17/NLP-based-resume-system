@@ -57,12 +57,13 @@ router.post("/register", async (req, res) => {
       });
     }
 
-    // Check if user already exists
-    const checkUser = await pool.query("SELECT * FROM users WHERE email = $1", [
-      email,
-    ]);
+    // An email must be unique across BOTH tables, not just the one being
+    // written to. Checking only `users` let an organisation's email be
+    // re-registered as a job seeker; findAccountByEmail looks in `users`
+    // first, so that organisation could then never reset its password.
+    const existing = await findAccountByEmail(email);
 
-    if (checkUser.rows.length > 0) {
+    if (existing) {
       return res.status(409).json({
         error: {
           message: "Email already registered",

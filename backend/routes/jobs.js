@@ -8,6 +8,7 @@ const { sendMatchNotification } = require("../utils/emailService");
 const { buildDashboardStats } = require("../utils/dashboardStats");
 const {
   normalizePositionsAvailable,
+  validateDeadline,
   ensureJobVacanciesPositionsColumn,
 } = require("../utils/jobPosting");
 const {
@@ -55,6 +56,14 @@ router.post("/", auth, async (req, res) => {
       });
     }
 
+    const deadlineCheck = validateDeadline(deadline);
+    if (!deadlineCheck.ok) {
+      return res.status(400).json({
+        error: { message: deadlineCheck.message, status: 400 },
+      });
+    }
+    const normalizedDeadline = deadlineCheck.value;
+
     const pythonServiceUrl =
       process.env.PYTHON_SERVICE_URL || "http://localhost:8000";
     const response = await axios.post(`${pythonServiceUrl}/api/parse/job`, {
@@ -79,7 +88,7 @@ router.post("/", auth, async (req, res) => {
       experience_level || parsedData.experience_level,
       employment_type,
       category,
-      deadline,
+      normalizedDeadline,
       normalizedPositions,
     ]);
 
@@ -683,8 +692,14 @@ router.put("/:id", auth, async (req, res) => {
       values.push(employment_type);
     }
     if (deadline) {
+      const editDeadlineCheck = validateDeadline(deadline);
+      if (!editDeadlineCheck.ok) {
+        return res.status(400).json({
+          error: { message: editDeadlineCheck.message, status: 400 },
+        });
+      }
       fields.push(`deadline = $${idx++}`);
-      values.push(deadline);
+      values.push(editDeadlineCheck.value);
     }
     if (hasPositionsAvailable) {
       fields.push(`positions_available = $${idx++}`);

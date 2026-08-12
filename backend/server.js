@@ -10,12 +10,38 @@ const app = express();
 app.use(helmet());
 app.use(cors());
 
-// Rate limiting
+// Behind a reverse proxy (Vercel, nginx, Render) every request arrives from
+// the proxy's address, so without this the rate limiter buckets all users
+// together and the whole site locks out after one user's quota.
+if (process.env.TRUST_PROXY) {
+  app.set("trust proxy", Number(process.env.TRUST_PROXY) || 1);
+}
+
+// Rate limiting. A single dashboard load is ~5 API calls, so the old global
+// limit of 100 per 15 minutes locked real users out after roughly twenty page
+// views. Keep a generous ceiling for ordinary traffic and put a tight limit on
+// the auth routes, which is where brute force actually matters.
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 app.use(limiter);
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20, // login, register, OTP and password reset attempts per IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true, // only failed attempts count towards the limit
+  message: {
+    error: {
+      message: "Too many attempts. Please try again in a few minutes.",
+      status: 429,
+    },
+  },
+});
 
 // Body parsing middleware
 app.use(express.json());
@@ -32,7 +58,7 @@ app.get("/health", (req, res) => {
 });
 
 // Routes
-app.use("/api/auth", require("./routes/auth"));
+app.use("/api/auth", authLimiter, require("./routes/auth"));
 app.use("/api/cv", require("./routes/cv"));
 app.use("/api/organisations", require("./routes/organisations"));
 app.use("/api/jobs", require("./routes/jobs"));

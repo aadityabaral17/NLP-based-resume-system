@@ -325,7 +325,7 @@ router.patch("/candidates/:match_id/status", auth, async (req, res) => {
 
     // Verify this match belongs to a job owned by this organisation
     const verifyQuery = `
-      SELECT mr.match_id 
+      SELECT mr.match_id, mr.status AS previous_status
       FROM match_results mr
       JOIN job_vacancies jv ON mr.vacancy_id = jv.vacancy_id
       WHERE mr.match_id = $1 AND jv.org_id = $2
@@ -345,8 +345,12 @@ router.patch("/candidates/:match_id/status", auth, async (req, res) => {
 
     const match = result.rows[0];
 
-    // Send email notification if shortlisted
-    if (status === "shortlisted") {
+    // Only notify on the transition into "shortlisted". Without this check,
+    // shortlisting an already-shortlisted candidate — which "Shortlist all
+    // eligible" does on every press — emails them again and writes another
+    // notifications row.
+    const previousStatus = verifyResult.rows[0].previous_status;
+    if (status === "shortlisted" && previousStatus !== "shortlisted") {
       try {
         const detailsQuery = `
       SELECT u.name, u.email, j.title, o.company_name

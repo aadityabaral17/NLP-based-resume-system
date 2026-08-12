@@ -86,11 +86,41 @@ SKILL_ALIASES = {
     "ml": "machine learning",
     "dl": "deep learning",
     "cv": "computer vision",
+    "amazon web services": "aws",
+    "microsoft azure": "azure",
+    "google cloud platform": "gcp",
+    "google cloud": "gcp",
+    "tailwind css": "tailwind",
+    "ci/cd": "ci cd",
+    "restful api": "rest api",
+    "rest apis": "rest api",
+    "restful apis": "rest api",
+    "k8s": "kubernetes",
 }
+
+# A CV usually writes the vendor's full product name ("Apache Airflow") while a
+# vacancy lists the short one ("airflow"). Matching is exact string membership,
+# so without stripping these prefixes the skill counts as missing and the
+# candidate loses 1/n of the skill overlap, which is 60% of the match score.
+SKILL_VENDOR_PREFIXES = (
+    "apache ", "amazon ", "microsoft ", "google ", "oracle ", "adobe ", "ibm ",
+)
 
 def normalize_skill(skill: str) -> str:
     skill_lower = skill.lower().strip()
-    return SKILL_ALIASES.get(skill_lower, skill_lower)
+
+    # exact alias first, so "amazon web services" -> "aws" wins over prefix
+    # stripping, which would otherwise leave the unhelpful "web services"
+    if skill_lower in SKILL_ALIASES:
+        return SKILL_ALIASES[skill_lower]
+
+    for prefix in SKILL_VENDOR_PREFIXES:
+        if skill_lower.startswith(prefix):
+            stripped = skill_lower[len(prefix):].strip()
+            if stripped:
+                return SKILL_ALIASES.get(stripped, stripped)
+
+    return skill_lower
 
 # ─── Skill implication map ─────────────────────────────
 SKILL_IMPLICATIONS = {

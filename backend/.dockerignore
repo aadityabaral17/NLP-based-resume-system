@@ -1,0 +1,12 @@
+node_modules/
+npm-debug.log
+
+# Real credentials never belong in an image.
+.env
+.env.local
+
+# Uploaded CVs are user data, not build input.
+uploads/
+
+# Tests are run in CI and locally, not inside the deployed image.
+*.test.js

@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "comment": "React Router owns the routes. Without this, opening or refreshing /login or /dashboard/jobseeker asks Vercel for a file that does not exist and returns 404. Every path must fall through to index.html so the router can handle it.",
+      "source": "/((?!assets/).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

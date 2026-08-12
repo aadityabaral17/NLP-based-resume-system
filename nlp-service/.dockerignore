@@ -1,0 +1,18 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+
+# Training and evaluation only; not needed to serve requests.
+train_bert.py
+train_model.py
+evaluate_*.py
+*.csv
+data/
+model.pkl
+
+# Reports live in the repository, not the image.
+*_REPORT.md
+
+.env
+.env.local

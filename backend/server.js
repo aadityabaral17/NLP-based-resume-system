@@ -8,7 +8,34 @@ const app = express();
 
 // Security middleware
 app.use(helmet());
-app.use(cors());
+
+// Without an allowlist any site can call this API from a visitor's browser.
+// CORS_ORIGINS is a comma separated list, e.g.
+//   CORS_ORIGINS=https://aris.vercel.app,https://www.aris.com
+// Left unset (local development) every origin is allowed, which keeps the
+// existing `npm run dev` workflow working unchanged.
+const allowedOrigins = (process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Requests with no Origin header are server to server or curl, not a
+      // browser, so CORS does not apply to them.
+      if (allowedOrigins.length === 0 || !origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+
+      // Signal "not allowed" rather than throwing. Throwing here reaches the
+      // error handler and answers a merely unwelcome origin with a 500 and a
+      // stack trace, which reads like a server fault. Omitting the header is
+      // what actually blocks the caller: the browser refuses the response.
+      return callback(null, false);
+    },
+    credentials: true,
+  }),
+);
 
 // Behind a reverse proxy (Vercel, nginx, Render) every request arrives from
 // the proxy's address, so without this the rate limiter buckets all users

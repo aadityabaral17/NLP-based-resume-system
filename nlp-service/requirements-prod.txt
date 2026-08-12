@@ -1,0 +1,21 @@
+# Runtime dependencies only. requirements.txt additionally carries pandas and
+# datasets, which are imported by train_bert.py and the evaluate_* scripts but
+# never by the service. Leaving them out keeps several hundred megabytes off
+# the deployed image.
+#
+# torch is installed separately in the Dockerfile from the CPU wheel index.
+# The default linux wheel bundles CUDA and adds well over 2 GB to an image
+# that only ever runs on CPU.
+
+fastapi
+uvicorn
+python-multipart
+requests
+
+pdfplumber
+python-docx
+
+spacy
+scikit-learn
+sentence-transformers
+transformers

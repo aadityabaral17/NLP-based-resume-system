@@ -12,6 +12,11 @@ import { useState } from "react";
  * - activeKey: currently selected item's key
  * - onSelect(key): called when an item is clicked
  * - footerLabel / onFooterClick: bottom pinned button (e.g. "Update Profile")
+ * - onLogout: signs the user out. Rendered inside the sidebar and shown only
+ *   below the lg breakpoint, because the dashboards' own top bar carries a
+ *   Logout button and that bar is `hidden lg:flex`. Without this there is no
+ *   way to sign out on a phone at all: the button exists in the DOM but the
+ *   bar holding it is never laid out, so it measures 0x0 and cannot be tapped.
  */
 function DashboardSidebar({
   logoSubtitle,
@@ -23,6 +28,7 @@ function DashboardSidebar({
   onSelect,
   footerLabel,
   onFooterClick,
+  onLogout,
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -97,6 +103,7 @@ function DashboardSidebar({
                 setMobileOpen(false);
                 onFooterClick?.();
               }}
+              onLogout={onLogout}
               NavList={NavList}
               onClose={() => setMobileOpen(false)}
             />
@@ -127,6 +134,7 @@ function SidebarInner({
   roleLabel,
   footerLabel,
   onFooterClick,
+  onLogout,
   NavList,
   onClose,
 }) {
@@ -171,6 +179,19 @@ function SidebarInner({
             className="w-full bg-ink text-white text-sm font-medium py-3 rounded-xl hover:opacity-90 transition"
           >
             {footerLabel}
+          </button>
+        </div>
+      )}
+
+      {/* lg:hidden because the dashboards' top bar already carries a Logout
+          above that breakpoint; showing both would duplicate it on desktop. */}
+      {onLogout && (
+        <div className="px-3 mt-3 lg:hidden">
+          <button
+            onClick={onLogout}
+            className="w-full border border-line text-slate text-sm font-medium py-3 rounded-xl hover:text-danger hover:border-danger transition"
+          >
+            Logout
           </button>
         </div>
       )}

@@ -530,6 +530,7 @@ function OrganisationDashboard() {
         onSelect={setActiveView}
         footerLabel="Update Profile"
         onFooterClick={() => navigate("/organisation/profile")}
+        onLogout={handleLogout}
       />
 
       <div className="flex-1 min-w-0">

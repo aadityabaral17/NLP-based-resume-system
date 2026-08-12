@@ -1,4 +1,4 @@
-const { transporter, FROM } = require("./mailer");
+const { sendMail } = require("./mailer");
 const pool = require("../config/database");
 
 // Generate 6 digit OTP
@@ -9,7 +9,6 @@ const generateOTP = () => {
 // Send OTP email
 const sendOTPEmail = async (email, otp) => {
   const mailOptions = {
-    from: FROM,
     to: email,
     subject: "ResumeMatch AI — Email Verification Code",
     html: `
@@ -31,13 +30,12 @@ const sendOTPEmail = async (email, otp) => {
       </div>
     `,
   };
-  await transporter.sendMail(mailOptions);
+  await sendMail(mailOptions);
 };
 
 // Send password reset code
 const sendPasswordResetEmail = async (email, otp) => {
   const mailOptions = {
-    from: FROM,
     to: email,
     subject: "ResumeMatch AI — Password Reset Code",
     html: `
@@ -59,7 +57,7 @@ const sendPasswordResetEmail = async (email, otp) => {
       </div>
     `,
   };
-  await transporter.sendMail(mailOptions);
+  await sendMail(mailOptions);
 };
 
 // Save OTP to database.

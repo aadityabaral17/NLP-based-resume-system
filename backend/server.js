@@ -76,10 +76,15 @@ app.use(express.urlencoded({ extended: true }));
 
 // Health check endpoint
 app.get("/health", (req, res) => {
+  // `email` reports which transport is configured. "none" means password
+  // resets and verification codes cannot be sent, which is otherwise only
+  // discoverable by a user hitting the failure.
+  const { transportName } = require("./utils/mailer");
   res.json({
     status: "healthy",
     service: "ResumeMatch AI Backend",
     version: "1.0.0",
+    email: transportName(),
     timestamp: new Date().toISOString(),
   });
 });

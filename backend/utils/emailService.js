@@ -1,4 +1,4 @@
-const { transporter, FROM } = require("./mailer");
+const { sendMail } = require("./mailer");
 const sendMatchNotification = async (
   candidateEmail,
   candidateName,
@@ -14,7 +14,6 @@ const sendMatchNotification = async (
       : "None — great match!";
 
   const mailOptions = {
-    from: FROM,
     to: candidateEmail,
     subject: `You matched ${scorePercent}% for ${jobTitle} at ${companyName}`,
     html: `
@@ -64,7 +63,7 @@ const sendMatchNotification = async (
     `,
   };
 
-  await transporter.sendMail(mailOptions);
+  await sendMail(mailOptions);
 };
 
 const sendShortlistNotification = async (
@@ -74,7 +73,6 @@ const sendShortlistNotification = async (
   companyName,
 ) => {
   const mailOptions = {
-    from: FROM,
     to: candidateEmail,
     subject: `You've been shortlisted for ${jobTitle} at ${companyName}`,
     html: `
@@ -112,7 +110,7 @@ const sendShortlistNotification = async (
     `,
   };
 
-  await transporter.sendMail(mailOptions);
+  await sendMail(mailOptions);
 };
 
 module.exports = { sendMatchNotification, sendShortlistNotification };
